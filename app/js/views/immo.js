@@ -21,8 +21,11 @@ function tenantChargesCollected(tenant, month) {
 function rentTxs(tenant, month, loyer, charges, date) {
   const base = { activite: 'Immobilier', sens: 'Revenu', devise: 'MAD', date, periode: month, tiers: tenant.nom, lot: tenant.lot, nature: 'Courant' };
   const out = [];
-  if (loyer > 0) out.push(upsert('tx', { ...base, categorie: 'Loyer', libelle: `Loyer ${monthLong(month)} — ${tenant.nom}`, montant: loyer, ref: `LOY${tenant.id}:${month}` }));
-  if (charges > 0) out.push(upsert('tx', { ...base, categorie: 'Charges refacturées', detail: 'Eau, électricité, ménage', libelle: `Charges ${monthLong(month)} — ${tenant.nom}`, montant: charges, ref: `CHG${tenant.id}:${month}` }));
+  // référence unique (anti-doublon entre appareils) ; un complément de loyer reçoit un suffixe
+  const refs = new Set(S.data.tx.map((t) => t.ref));
+  const ref = (p) => { let r = `${p}${tenant.id}:${month}`, n = 2; while (refs.has(r)) r = `${p}${tenant.id}:${month}:${n++}`; return r; };
+  if (loyer > 0) out.push(upsert('tx', { ...base, categorie: 'Loyer', libelle: `Loyer ${monthLong(month)} — ${tenant.nom}`, montant: loyer, ref: ref('LOY') }));
+  if (charges > 0) out.push(upsert('tx', { ...base, categorie: 'Charges refacturées', detail: 'Eau, électricité, ménage', libelle: `Charges ${monthLong(month)} — ${tenant.nom}`, montant: charges, ref: ref('CHG') }));
   return out;
 }
 export function openCollect(lot, month) {

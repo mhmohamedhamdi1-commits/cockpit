@@ -10,3 +10,6 @@ playwright-report/
 .wrangler/
 *.xlsx
 backups/
+dist/
+supabase/functions/_shared/
+tools/cloud/.worker/

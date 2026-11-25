@@ -1,6 +1,6 @@
 import { h, icon, eur, fmtDate, norm, clear, sum, num0 } from '../util.js';
 import { S } from '../state.js';
-import { txs, eurOf } from '../calc.js';
+import { txs, eurOf, byDateDesc } from '../calc.js';
 import { empty, select } from '../ui.js';
 import { openTxForm } from '../txform.js';
 import { actDot, catChip, amountEl, natureBadge } from './common.js';
@@ -18,17 +18,17 @@ export function render() {
     const q = norm(F.q.trim());
     let list = base.filter((t) => (!F.sens || t.sens === F.sens) && (!F.cat || t.categorie === F.cat) && (!F.nature || t.nature === F.nature) &&
       (!q || norm([t.libelle, t.categorie, t.tiers, t.lot, t.note, t.detail].join(' ')).includes(q)));
-    list = list.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id));
+    list = list.sort(byDateDesc);
     const rev = sum(list.filter((t) => t.sens === 'Revenu' && t.nature === 'Courant'), eurOf), dep = sum(list.filter((t) => t.sens === 'Dépense' && t.nature === 'Courant'), eurOf);
     clear(body);
     if (!list.length) { body.append(empty('Aucune opération', 'Aucun résultat avec ces filtres sur la période choisie.')); return; }
     const shown = list.slice(0, F.limit);
-    body.append(h('table', { class: 'tbl' },
+    body.append(h('table', { class: 'tbl txlist' },
       h('thead', null, h('tr', null, h('th', null, 'Date'), h('th', null, 'Libellé'), h('th', null, 'Catégorie'), h('th', null, 'Activité'), h('th', null), h('th', { class: 'r' }, 'Montant'))),
-      h('tbody', null, shown.map((t) => h('tr', { class: 'click', onClick: () => openTxForm(t) },
-        h('td', { style: { whiteSpace: 'nowrap', color: 'var(--ink-2)' } }, fmtDate(t.date)),
-        h('td', null, t.libelle, h('span', { class: 'sub' }, [t.tiers, t.lot, t.detail].filter(Boolean).join(' · '))),
-        h('td', null, catChip(t)), h('td', { style: { whiteSpace: 'nowrap' } }, actDot(t.activite), t.activite), h('td', null, natureBadge(t)), h('td', { class: 'r' }, amountEl(t))))),
+      h('tbody', null, shown.map((t) => h('tr', { class: 'click' + (t._pending ? ' pending' : ''), onClick: () => openTxForm(t) },
+        h('td', { class: 'c-date', style: { whiteSpace: 'nowrap', color: 'var(--ink-2)' } }, fmtDate(t.date)),
+        h('td', { class: 'c-lib' }, h('span', { class: 'lib' }, actDot(t.activite), t.libelle), h('span', { class: 'sub' }, [h('span', { class: 'm-only' }, fmtDate(t.date) + ' · ' + t.categorie + ' · '), [t.tiers, t.lot, t.detail].filter(Boolean).join(' · ')])),
+        h('td', { class: 'c-cat' }, catChip(t)), h('td', { class: 'c-act', style: { whiteSpace: 'nowrap' } }, actDot(t.activite), t.activite), h('td', { class: 'c-nat' }, natureBadge(t)), h('td', { class: 'r c-amt' }, amountEl(t))))),
       h('tfoot', null, h('tr', null, h('td', { colspan: 4 }, `${list.length} opération${list.length > 1 ? 's' : ''}`), h('td', { class: 'r', colspan: 2 }, `Revenus ${eur(rev)} · Dépenses ${eur(dep)} · Résultat `, h('span', { class: rev - dep >= 0 ? 'pos' : 'neg' }, (rev - dep >= 0 ? '+' : '') + eur(rev - dep)))))));
     if (list.length > shown.length) body.append(h('div', { style: { textAlign: 'center', padding: '14px' } }, h('button', { class: 'btn', onClick: () => { F.limit += 200; draw(); } }, `Afficher plus (${list.length - shown.length} restantes)`)));
   };
@@ -45,3 +45,6 @@ export function render() {
     h('div', { class: 'filters', style: { marginBottom: '12px' } }, h('div', { class: 'grow' }, icon('search', 17), search), sensSel, catSel, natSel), body));
   return out;
 }
+
+// Raccourci de l'icône (« Nouvelle opération ») : #/ops?new=1
+export function onArgs(a) { if (a.new) { openTxForm(); history.replaceState(null, '', '#/ops'); } }

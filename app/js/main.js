@@ -1,6 +1,10 @@
 import { h, icon, clear, monthLabel, monthLong, addMonths, monthNames, monthShort } from './util.js';
-import { S, load, loadPrefs, savePrefs, subscribe, emit, reload, setPeriod, setActivity, post } from './state.js';
-import { segmented, popover, toast } from './ui.js';
+import { S, load, loadPrefs, savePrefs, subscribe, emit, reload, setPeriod, setActivity, startSync, flush, wipeLocal, stopSync } from './state.js';
+import { segmented, popover, toast, modal } from './ui.js';
+import { ensureAuth, watchRecovery } from './auth.js';
+import { sb } from './supa.js';
+import { computeAlerts } from './core.js';
+import { exportExcel } from './data.js';
 import { openTxForm } from './txform.js';
 import * as dashboard from './views/dashboard.js';
 import * as opsView from './views/ops.js';
@@ -91,7 +95,47 @@ function buildShell() {
     nav, h('div', { class: 'spacer' }), filebox);
   refs.top = h('header', { class: 'top' });
   refs.scroll = h('div', { class: 'scroll' });
-  app.append(h('div', { class: 'app' }, side, h('main', { class: 'main' }, refs.top, refs.scroll)));
+  refs.tabbar = h('nav', { class: 'tabbar' });
+  app.append(h('div', { class: 'app' }, side, h('main', { class: 'main' }, refs.top, refs.scroll), refs.tabbar));
+}
+
+const TABS = ['dashboard', 'ops', '+', 'immo', 'more'];
+function openMore() {
+  const items = Object.entries(ROUTES).filter(([k]) => !['dashboard', 'ops', 'immo'].includes(k));
+  const m = modal({ title: 'Menu', body: h('div', { class: 'morelist' }, items.map(([k, r]) => {
+    const badge = r.v.badge ? r.v.badge() : 0;
+    return h('a', { href: '#/' + k, class: S.route === k ? 'on' : '', onClick: () => m.close() }, icon(r.ic, 20), r.label, badge ? h('span', { class: 'count' }, badge) : null, icon('right', 16));
+  }), h('div', { class: 'syncline' }, syncText())) });
+}
+function renderTabbar() {
+  clear(refs.tabbar);
+  for (const k of TABS) {
+    if (k === '+') { refs.tabbar.append(h('button', { class: 'fab', type: 'button', 'aria-label': 'Nouvelle opération', onClick: () => openTxForm() }, icon('plus', 26))); continue; }
+    if (k === 'more') {
+      const inMore = !['dashboard', 'ops', 'immo'].includes(S.route);
+      const n = Object.entries(ROUTES).filter(([x]) => !['dashboard', 'ops', 'immo'].includes(x)).reduce((a, [, r]) => a + (r.v.badge ? r.v.badge() : 0), 0);
+      refs.tabbar.append(h('button', { type: 'button', class: inMore ? 'on' : '', onClick: openMore }, icon('more', 22), h('span', null, 'Plus'), n ? h('i', { class: 'dotn' }, n) : null));
+      continue;
+    }
+    const r = ROUTES[k];
+    const badge = r.v.badge ? r.v.badge() : 0;
+    refs.tabbar.append(h('a', { href: '#/' + k, class: S.route === k ? 'on' : '' }, icon(r.ic, 22), h('span', null, k === 'dashboard' ? 'Accueil' : r.label), badge ? h('i', { class: 'dotn' }, badge) : null));
+  }
+}
+
+function ago(iso) {
+  if (!iso) return 'jamais';
+  const s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return 'à l’instant';
+  if (s < 3600) return `il y a ${Math.round(s / 60)} min`;
+  return `il y a ${Math.round(s / 3600)} h`;
+}
+function syncText() {
+  const y = S.sync;
+  if (!y.online) return [h('span', { class: 'dot-off' }), `Hors ligne${y.pending ? ` · ${y.pending} en attente` : ''}`];
+  if (y.pending) return [h('span', { class: 'dot-warn' }), `${y.pending} modification${y.pending > 1 ? 's' : ''} à envoyer…`];
+  if (y.error) return [h('span', { class: 'dot-warn' }), `Synchro : ${y.error}`];
+  return [h('span', { class: 'dot-ok' }), `Synchronisé ${ago(y.lastSync)}`];
 }
 
 function renderNav() {
@@ -101,11 +145,12 @@ function renderNav() {
     refs.nav.append(h('a', { class: S.route === k ? 'on' : '', href: '#/' + k, tabindex: 0 }, icon(r.ic, 18), r.label, badge ? h('span', { class: 'count' }, badge) : null));
   }
   clear(refs.filebox);
-  refs.filebox.append(h('div', null, h('span', { class: 'dot-ok' }), 'Données enregistrées'), h('b', null, S.file),
+  refs.filebox.append(h('div', null, syncText()), h('b', null, 'Base centrale (cloud)'),
     h('div', { class: 'row' },
-      h('button', { class: 'btn sm', title: 'Ouvrir le classeur dans Excel', onClick: () => post('/api/open-excel').catch((e) => toast(e.message, 'error')) }, icon('sheet', 15), 'Excel'),
-      h('button', { class: 'btn sm', title: 'Ouvrir le dossier', onClick: () => post('/api/open-folder').catch((e) => toast(e.message, 'error')) }, icon('folder', 15)),
+      h('button', { class: 'btn sm', title: 'Synchroniser maintenant', onClick: () => flush().then(() => toast('Synchronisé')) }, icon('repeat', 15)),
+      h('button', { class: 'btn sm', title: 'Exporter toutes les données dans un fichier Excel', onClick: () => exportExcel() }, icon('sheet', 15), 'Excel'),
       h('button', { class: 'btn sm', title: S.theme === 'dark' ? 'Mode clair' : 'Mode sombre', onClick: () => { S.theme = (document.documentElement.dataset.theme === 'dark') ? 'light' : 'dark'; savePrefs(); applyTheme(); renderNav(); } }, icon(document.documentElement.dataset.theme === 'dark' ? 'sun' : 'moon', 15))));
+  renderTabbar();
 }
 
 function renderTop() {
@@ -134,30 +179,63 @@ function renderView() {
   catch (e) { console.error(e); refs.scroll.append(h('div', { class: 'card' }, h('b', null, 'Erreur d’affichage'), h('pre', { style: { whiteSpace: 'pre-wrap' } }, String(e.stack || e)))); }
   refs.scroll.scrollTop = st;
 }
-function renderAll() { renderNav(); renderTop(); renderView(); document.title = `${ROUTES[S.route].label} — Cockpit`; }
+function renderAll() { renderNav(); renderTop(); renderView(); document.title = `${ROUTES[S.route].label} — Cockpit`; updateBadge(); }
 
 function route() {
-  const k = (location.hash || '#/dashboard').replace('#/', '');
+  const [k, qs] = (location.hash || '#/dashboard').replace('#/', '').split('?');
   S.route = ROUTES[k] ? k : 'dashboard';
+  S.args = Object.fromEntries(new URLSearchParams(qs || ''));
   renderAll();
   refs.scroll.scrollTop = 0;
+  const v = ROUTES[S.route].v;
+  if (v.onArgs && qs) setTimeout(() => v.onArgs(S.args), 50);
+}
+
+function updateBadge() {
+  try {
+    const n = computeAlerts(S).filter((a) => a.kind === 'bad' || a.kind === 'warn').length;
+    if (navigator.setAppBadge) (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {});
+  } catch { /* ignore */ }
 }
 
 // ---------- démarrage ----------
+let swReloading = false;
+function registerSW() {
+  if (!('serviceWorker' in navigator) || location.hostname === 'localhost' && !location.search.includes('sw')) return;
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (swReloading) return; swReloading = true;
+    if (!document.querySelector('.overlay')) location.reload();
+  });
+}
+
 (async function init() {
-  app.append(h('div', { class: 'loading' }, 'Chargement…'));
   loadPrefs(); applyTheme();
-  try { await load(); } catch (e) { clear(app); app.append(h('div', { class: 'loading' }, 'Impossible de charger les données : ' + e.message)); return; }
+  registerSW();
+  watchRecovery();
+  app.append(h('div', { class: 'loading' }, 'Chargement…'));
+  let user;
+  try { user = await ensureAuth({ offlineOk: true }); }
+  catch (e) { clear(app); app.append(h('div', { class: 'loading' }, 'Connexion impossible : ' + e.message)); return; }
+  S.user = user;
+  clear(app); app.append(h('div', { class: 'loading' }, 'Synchronisation des données…'));
+  try { await load(user.id); }
+  catch (e) { clear(app); app.append(h('div', { class: 'loading' }, h('div', null, 'Impossible de charger les données : ' + e.message, h('div', { style: { marginTop: '12px', textAlign: 'center' } }, h('button', { class: 'btn', onClick: () => location.reload() }, 'Réessayer'))))); return; }
   buildShell();
   subscribe(renderAll);
   window.addEventListener('hashchange', route);
   route();
+  startSync();
+  setInterval(() => { if (document.visibilityState === 'visible') renderNav(); }, 30000);
 
-  // heartbeat : l'application se ferme quand la fenêtre est fermée
-  const hb = () => post('/api/hb').catch(() => {});
-  hb(); setInterval(hb, 10000);
-  window.addEventListener('pagehide', () => navigator.sendBeacon('/api/bye?t=' + window.__T));
-  // reprise du focus : relire le fichier (modifié dans Excel ?)
+  window.addEventListener('cockpit:auth-required', async () => {
+    toast('Session expirée : reconnecte-toi.', 'error');
+    await stopSync(); location.reload();
+  });
+  sb.auth.onAuthStateChange(async (event) => {
+    if (event === 'SIGNED_OUT') { await wipeLocal(); location.replace('/'); }
+  });
+  // reprise du focus : synchroniser
   let lastFocus = Date.now();
   window.addEventListener('focus', async () => { if (Date.now() - lastFocus > 4000 && !document.querySelector('.overlay')) { try { await reload(); } catch { /* ignore */ } } lastFocus = Date.now(); });
   document.addEventListener('keydown', (e) => {

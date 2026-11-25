@@ -34,7 +34,7 @@ async function unpay(i) {
   await ops(list, 'Paiement annulé');
 }
 
-function openInvoiceForm(inv = {}) {
+export function openInvoiceForm(inv = {}) {
   const editing = !!inv.id, paid = inv.statut === 'Payée';
   if (!S.data.clients.length) return toast('Ajoute d’abord un client.', 'error');
   const cl = select(S.data.clients.map((c) => ({ value: c.nom, label: c.nom })), inv.client || S.data.clients[0].nom);
@@ -132,4 +132,14 @@ export function render() {
     S.data.clients.length ? h('table', { class: 'tbl' }, h('tbody', null, S.data.clients.map((c) => h('tr', { class: 'click', onClick: () => openClientForm(c) },
       h('td', null, c.nom, h('span', { class: 'sub' }, c.micro === 'Oui' ? 'Compte dans la micro' : 'Hors micro-entreprise')), h('td', { class: 'r num' }, `${num0(c.tjm)} ${c.devise === 'MAD' ? 'MAD' : '€'} / j`), h('td', { class: 'r muted' }, c.tva ? `TVA ${Math.round(c.tva * 100)} %` : 'Sans TVA'))))) : empty('Aucun client', ''));
   return [kpis, plafCard, facCard, cliCard];
+}
+
+// Ouverture depuis une notification : #/freelance?inv=<id> ou ?jours=AAAA-MM
+export function onArgs(a) {
+  if (a.inv) { const i = S.data.invoices.find((x) => x.id === a.inv); if (i) openInvoiceForm(i); }
+  else if (a.jours) {
+    const list = S.data.invoices.filter((x) => x.periode === a.jours && x.statut === 'Planifiée');
+    if (list.length === 1) openInvoiceForm(list[0]);
+    else if (!list.length) openInvoiceForm({ periode: a.jours });
+  }
 }

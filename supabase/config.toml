@@ -1,0 +1,4 @@
+project_id = "cockpit"
+
+[functions.rappels]
+verify_jwt = false

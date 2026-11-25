@@ -2,16 +2,25 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Cockpit — Finances</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23111'/%3E%3Cpath d='M7 21l6-7 4 4 8-10' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<meta name="description" content="Cockpit : suivi consolidé perso, freelance et immobilier">
+<meta name="theme-color" content="#f4f4f1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121211" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Cockpit">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <link rel="stylesheet" href="/css/style.css">
-<script>window.__T="__TOKEN__";
-window.addEventListener("error",function(e){var d=document.createElement("pre");d.id="jserr";d.style.cssText="position:fixed;left:0;right:0;bottom:0;z-index:999;margin:0;padding:10px 16px;background:#a52626;color:#fff;font:12px/1.4 Consolas,monospace;white-space:pre-wrap;max-height:40vh;overflow:auto";d.textContent="Erreur : "+e.message+" ("+(e.filename||"").split("/").pop()+":"+e.lineno+")";document.body.appendChild(d)});
-window.addEventListener("unhandledrejection",function(e){var d=document.createElement("pre");d.id="jserr";d.style.cssText="position:fixed;left:0;right:0;bottom:0;z-index:999;margin:0;padding:10px 16px;background:#a52626;color:#fff;font:12px/1.4 Consolas,monospace;white-space:pre-wrap;max-height:40vh;overflow:auto";d.textContent="Erreur : "+(e.reason&&e.reason.stack||e.reason);document.body.appendChild(d)});</script>
+<script src="/js/boot.js"></script>
+<script src="/vendor/supabase.js" defer></script>
+<script type="module" src="/js/main.js"></script>
 </head>
 <body>
-<div id="app"></div>
-<script type="module" src="/js/main.js"></script>
+<div id="app"><div class="loading">Chargement…</div></div>
 </body>
 </html>

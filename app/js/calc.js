@@ -1,5 +1,6 @@
 import { S } from './state.js';
-import { addMonths, monthsBetween, monthEnd, monthStart, sum } from './util.js';
+import { addMonths, monthsBetween, sum } from './util.js';
+import * as core from './core.js';
 
 export const inRange = (date, p) => { const m = date.slice(0, 7); return m >= p.from && m <= p.to; };
 export const weight = (t) => (t.activite === 'Immobilier' && S.immoView === 'mine' ? S.P.part : 1);
@@ -76,73 +77,13 @@ export function topCategories(list, { by = 'groupe', n = 8 } = {}) {
   return arr;
 }
 
-// ---------- Immobilier : locataires & loyers ----------
-export function tenancyFor(lotLabel, month) {
-  const a = monthStart(month), b = monthEnd(month);
-  const c = S.data.tenants.filter((t) => t.lot === lotLabel && (!t.entree || t.entree <= b) && (!t.sortie || t.sortie >= a));
-  c.sort((x, y) => (y.entree || '').localeCompare(x.entree || ''));
-  return c[0] || null;
-}
-export const activeTenants = (date = S.today) => S.data.tenants.filter((t) => (!t.entree || t.entree <= date) && (!t.sortie || t.sortie >= date));
-const toMad = (t) => (t.devise === 'MAD' ? t.montant : t.montantEur / S.P.taux);
+// Délégation au module partagé (S sert de contexte)
+export const tenancyFor = (lot, month) => core.tenancyFor(S, lot, month);
+export const activeTenants = (date = S.today) => core.activeTenants(S, date);
+export const rentCell = (lot, month) => core.rentCell(S, lot, month);
+export const microFactor = (year) => core.microFactor(S, year);
+export const freelanceYear = (year) => core.freelanceYear(S, year);
+export const microYear = () => core.microYear(S);
 
-let _rentIdx = null, _rentSrc = null;
-function rentIndex() {
-  if (_rentSrc === S.data) return _rentIdx;
-  const m = new Map();
-  for (const t of S.data.tx) {
-    if (t.activite !== 'Immobilier' || t.categorie !== 'Loyer' || t.sens !== 'Revenu') continue;
-    const k = `${t.lot}|${t.periode || t.date.slice(0, 7)}`;
-    const e = m.get(k) || { paid: 0, txs: [] };
-    e.paid += toMad(t); e.txs.push(t); m.set(k, e);
-  }
-  _rentSrc = S.data; _rentIdx = m; return m;
-}
-export function rentCell(lot, month) {
-  const ten = tenancyFor(lot, month);
-  const e = rentIndex().get(`${lot}|${month}`) || { paid: 0, txs: [] };
-  let expected = ten ? ten.loyer : 0;
-  // mois partiel (entrée ou sortie en cours de mois) : au prorata, ou considéré réglé si un paiement existe
-  if (ten) {
-    const a = monthStart(month), b = monthEnd(month), dim = +b.slice(8, 10);
-    const startDay = ten.entree && ten.entree > a ? +ten.entree.slice(8, 10) : 1;
-    const endDay = ten.sortie && ten.sortie < b ? +ten.sortie.slice(8, 10) : dim;
-    if (startDay > 1 || endDay < dim) expected = e.paid > 0 ? e.paid : Math.round(((endDay - startDay + 1) / dim) * ten.loyer / 50) * 50;
-  }
-  const cur = S.today.slice(0, 7);
-  let status;
-  if (expected === 0 && e.paid === 0) status = 'vac';
-  else if (expected > 0 && e.paid >= expected - 0.5) status = 'paid';
-  else if (expected === 0) status = 'paid';
-  else if (e.paid > 0) status = 'part';
-  else if (month > cur) status = 'fut';
-  else if (month === cur) status = 'due';
-  else status = 'late';
-  return { status, paid: e.paid, expected, tenant: ten, txs: e.txs };
-}
-
-// ---------- Freelance ----------
-// Seuls les clients "compte dans la micro" et les périodes >= début de la micro-entreprise comptent.
-export function microFactor(year) {
-  const start = S.P.microDebut || '2027-01-01';
-  if (String(year) !== start.slice(0, 4)) return 1;
-  const d0 = new Date(start + 'T00:00:00'), d1 = new Date(`${year}-12-31T00:00:00`);
-  const days = Math.round((d1 - d0) / 864e5) + 1;
-  return Math.min(1, days / 365);
-}
-export function freelanceYear(year) {
-  const micro = new Set(S.data.clients.filter((c) => c.micro === 'Oui').map((c) => c.nom));
-  const from = (S.P.microDebut || '2027-01-01').slice(0, 7);
-  const ht = (i) => (i.devise === 'MAD' ? i.ht * S.P.taux : i.ht);
-  const yr = (d, fb) => (d || fb || '').slice(0, 4);
-  let paid = 0, billed = 0, planned = 0;
-  for (const i of S.data.invoices) {
-    if (!micro.has(i.client) || i.periode < from) continue;
-    if (i.statut === 'Payée' && yr(i.paiement, i.emission || i.periode + '-01') === year) paid += ht(i);
-    else if (i.statut === 'Envoyée' && yr(i.emission, i.periode + '-01') === year) billed += ht(i);
-    else if (i.statut === 'Planifiée' && i.periode.slice(0, 4) === year) planned += ht(i);
-  }
-  const f = microFactor(year);
-  return { paid, billed, planned, total: paid + billed + planned, factor: f, micro: S.P.seuilMicro * f, tva: S.P.seuilTva * f, tvaMaj: S.P.seuilTvaMaj * f };
-}
-export function microYear() { return Math.max(+S.today.slice(0, 4), +(S.P.microDebut || '2027').slice(0, 4)); }
+// Tri stable « plus récent d'abord » (date puis ordre de saisie)
+export const byDateDesc = (a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : (b.seq || 1e15) - (a.seq || 1e15));
