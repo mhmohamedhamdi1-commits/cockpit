@@ -164,6 +164,7 @@ export function openTxForm(initial = {}, { onSaved } = {}) {
       id: f.id, date: f.date, activite: f.activite, sens: f.sens, categorie: f.categorie, detail: f.detail, libelle: f.libelle || f.categorie,
       montant: v, devise: f.devise, taux: f.taux || 0, nature: natureTouched ? natSel.value : (editing && f.categorie === origCat ? f.nature : ''),
       tiers: f.tiers, lot: f.lot, periode: editing && f.date.slice(0, 7) === (initial.date || '').slice(0, 7) ? f.periode : '', ref: f.ref, note: f.note,
+      ...(editing ? { version: initial.version, _base: initial } : {}),
     };
     if (initial.periode && !editing) item.periode = initial.periode;
     S.lastActivity = f.activite; savePrefs();

@@ -136,10 +136,15 @@ function prepare(list) {
     const src = o.item || {};
     const cur = src.id ? rows[def.key].get(src.id) : null;
     const item = toDb(def, src);
+    let base = null;
     if (!src.id || !cur) { item.id = src.id || uuid(); item._insert = true; delete item.version; }
-    else if (!cur._pending) item.version = cur.version;
-    else delete item.version;
-    return { e: o.e, op: 'upsert', item, base: cur && !cur._pending ? toDb(def, cur) : null, label: labelOf(def, cur || src) };
+    else if (cur._pending) delete item.version;
+    else {
+      // version = celle de la ligne telle qu'elle était quand l'écran l'a ouverte (pas celle reçue entre-temps)
+      item.version = src.version || cur.version;
+      base = src._base ? toDb(def, src._base) : item.version === cur.version ? toDb(def, cur) : null;
+    }
+    return { e: o.e, op: 'upsert', item, base, label: labelOf(def, cur || src) };
   });
 }
 const labelOf = (def, r) => (r ? r.libelle || r.nom || r.numero || r.titre || r.compte || r.categorie || '' : '');
@@ -207,9 +212,9 @@ async function resolveConflict(batch, error) {
     op.version = server.version;
     return true;
   }
-  const base = op.base || {};
+  const base = op.base || Object.fromEntries(Object.keys(op.item).map((k) => [k, Symbol.for('inconnu')]));
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-  const norm = (k, v) => (v == null ? '' : typeof v === 'number' ? v : /^\d{4}-\d{2}-\d{2}/.test(String(v)) ? String(v).slice(0, 10) : v);
+  const norm = (k, v) => (typeof v === 'symbol' ? '\u0000inconnu' : v == null ? '' : typeof v === 'number' ? v : /^\d{4}-\d{2}-\d{2}/.test(String(v)) ? String(v).slice(0, 10) : v);
   const mine = Object.keys(op.item).filter((k) => !['id', 'version', '_insert'].includes(k) && !same(norm(k, op.item[k]), norm(k, base[k])));
   const overlap = mine.filter((k) => !same(norm(k, server[k]), norm(k, base[k])) && !same(norm(k, server[k]), norm(k, op.item[k])));
   if (overlap.length) {
