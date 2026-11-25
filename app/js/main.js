@@ -225,7 +225,7 @@ function registerSW() {
   subscribe(renderAll);
   window.addEventListener('hashchange', route);
   route();
-  startSync();
+  await startSync();
   setInterval(() => { if (document.visibilityState === 'visible') renderNav(); }, 30000);
 
   window.addEventListener('cockpit:auth-required', async () => {

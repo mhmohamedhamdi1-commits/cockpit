@@ -376,7 +376,9 @@ input.otp { font: 700 26px/1 var(--mono); letter-spacing: .35em; text-align: cen
   .app { grid-template-columns: 1fr; height: 100dvh; }
   .side { display: none; }
   .main { height: 100dvh; }
-  .top { padding: calc(8px + env(safe-area-inset-top)) 14px 8px; gap: 8px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .top { padding: calc(8px + env(safe-area-inset-top)) 12px 8px; gap: 6px 8px; flex-wrap: wrap; }
+  .top h1 { flex-basis: 100%; }
+  .top .seg { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
   .top::-webkit-scrollbar { display: none; }
   .top h1 { font-size: 19px; white-space: nowrap; }
   .top .sub { display: none; }

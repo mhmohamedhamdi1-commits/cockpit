@@ -165,7 +165,7 @@ export function render() {
   const gridCard = h('div', { class: 'card' },
     h('header', null, h('h2', null, 'Suivi des loyers'), h('span', { class: 'sub' }, 'clique sur une case pour encaisser'),
       h('div', { class: 'right' }, h('button', { class: 'btn primary', onClick: () => openCollectAll(cur) }, icon('check', 16), `Encaisser les loyers de ${monthLong(cur).split(' ')[0]}`))),
-    h('div', { class: 'gridwrap' }, grid),
+    (() => { const w = h('div', { class: 'gridwrap' }, grid); requestAnimationFrame(() => { w.scrollLeft = w.scrollWidth; }); return w; })(),
     h('div', { class: 'legend', style: { marginTop: '12px', flexWrap: 'wrap' } },
       h('span', null, h('i', { style: { background: 'var(--good-bg)', border: '1px solid var(--good)' } }), 'Payé'), h('span', null, h('i', { style: { background: 'var(--warn-bg)', border: '1px solid var(--warn)' } }), 'Partiel / à encaisser'),
       h('span', null, h('i', { style: { background: 'var(--crit-bg)', border: '1px solid var(--crit)' } }), 'Impayé'), allMonths.length > gm.length ? h('span', { class: 'muted' }, `Affichage des ${gm.length} derniers mois de la période`) : null));

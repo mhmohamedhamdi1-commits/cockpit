@@ -20,7 +20,13 @@ grant execute on function public.ck_export(uuid), public.ck_restore(uuid, jsonb,
 
 -- Tâches planifiées
 create extension if not exists pg_cron;
-create extension if not exists pg_net;
+create schema if not exists extensions;
+do $$ begin
+  if exists (select 1 from pg_extension e join pg_namespace n on n.oid = e.extnamespace where e.extname = 'pg_net' and n.nspname = 'public') then
+    drop extension pg_net;
+  end if;
+end $$;
+create extension if not exists pg_net schema extensions;
 
 do $$
 begin
@@ -39,3 +45,10 @@ select cron.schedule('cockpit-rappels', '2 * * * *', $cron$
     body := '{}'::jsonb,
     timeout_milliseconds := 60000);
 $cron$);
+
+-- Le rôle de service (fonction de notifications, sauvegarde externe, migration) doit pouvoir lire / écrire
+-- toutes les tables (il contourne la RLS par conception ; sa clé n'existe que côté serveur).
+grant usage on schema public to service_role;
+grant select, insert, update, delete on all tables in schema public to service_role;
+grant usage, select on all sequences in schema public to service_role;
+grant execute on all functions in schema public to service_role;

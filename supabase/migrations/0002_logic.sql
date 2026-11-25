@@ -5,7 +5,7 @@
 -- Le client n'a qu'un droit de LECTURE sur les tables : toute écriture passe par ces fonctions.
 -- =====================================================================================
 
-create or replace function public.ck_err(p_msg text) returns void language plpgsql as $$
+create or replace function public.ck_err(p_msg text) returns void language plpgsql set search_path = public, pg_temp as $$
 begin raise exception using errcode = 'CK422', message = p_msg; end $$;
 
 create or replace function public.ck_require_aal2() returns uuid
@@ -27,13 +27,13 @@ language sql stable set search_path = public, pg_temp as $$
     and a.attname not in ('id', 'user_id', 'seq', 'created_at', 'updated_at', 'version', 'deleted_at')
 $$;
 
-create or replace function public.ck_uuid(p text) returns uuid language plpgsql immutable as $$
+create or replace function public.ck_uuid(p text) returns uuid language plpgsql immutable set search_path = public, pg_temp as $$
 begin return p::uuid; exception when others then return null; end $$;
 
-create or replace function public.ck_num(p text) returns numeric language plpgsql immutable as $$
+create or replace function public.ck_num(p text) returns numeric language plpgsql immutable set search_path = public, pg_temp as $$
 begin return replace(replace(p, ' ', ''), ',', '.')::numeric; exception when others then return null; end $$;
 
-create or replace function public.ck_date(p text) returns date language plpgsql immutable as $$
+create or replace function public.ck_date(p text) returns date language plpgsql immutable set search_path = public, pg_temp as $$
 begin return left(p, 10)::date; exception when others then return null; end $$;
 
 create or replace function public.ck_param(p_uid uuid, p_key text, p_def numeric) returns numeric
@@ -72,7 +72,7 @@ begin
   return v_id;
 end $$;
 
-create or replace function public.ck_conflict(p_tbl text, p_row jsonb) returns void language plpgsql as $$
+create or replace function public.ck_conflict(p_tbl text, p_row jsonb) returns void language plpgsql set search_path = public, pg_temp as $$
 begin
   raise exception using errcode = 'CK409', message = 'modifié sur un autre appareil',
     detail = jsonb_build_object('table', p_tbl, 'row', p_row)::text;
@@ -187,7 +187,7 @@ begin
   end if;
 end $$;
 
-create or replace function public.ck_table_of(p_entity text) returns text language sql immutable as $$
+create or replace function public.ck_table_of(p_entity text) returns text language sql immutable set search_path = public, pg_temp as $$
   select case p_entity when 'tx' then 'tx' when 'lot' then 'lots' when 'tenant' then 'tenants' when 'client' then 'clients'
     when 'invoice' then 'invoices' when 'recurring' then 'recurring' when 'account' then 'accounts'
     when 'snapshot' then 'snapshots' when 'rappel' then 'rappels' end

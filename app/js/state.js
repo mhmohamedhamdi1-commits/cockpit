@@ -309,11 +309,15 @@ export const pendingCount = () => outbox.length;
 
 // ---------- temps réel + réveils ----------
 let channel;
-export function startSync() {
+export async function startSync() {
+  // le canal temps réel doit porter le jeton de niveau MFA (aal2), sinon la RLS bloque les événements
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) await sb.realtime.setAuth(session.access_token);
+  sb.auth.onAuthStateChange((_e, s) => { if (s) sb.realtime.setAuth(s.access_token); });
   const kick = debounce(() => { if (!outbox.length) pull().then(emit).catch(() => {}); else flush(); }, 500);
   channel = sb.channel('cockpit-db');
   for (const t of TABLES) channel.on('postgres_changes', { event: '*', schema: 'public', table: t.key }, kick);
-  channel.subscribe();
+  channel.subscribe((status, err) => { S.sync.realtime = status; if (status !== 'SUBSCRIBED') console.warn('temps réel :', status, err ? err.message : ''); });
   window.addEventListener('online', () => { S.sync.online = true; emit(); flush(); });
   window.addEventListener('offline', () => { S.sync.online = false; emit(); });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { S.today = today(); flush(); } });

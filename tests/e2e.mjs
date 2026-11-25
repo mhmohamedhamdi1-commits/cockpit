@@ -50,6 +50,8 @@ async function makeUser(tag) {
 const T1 = await makeUser('owner');
 const T2 = await makeUser('intrus');
 console.log('Comptes de test :', T1.email, T2.email);
+let browser;
+try {
 const rest = async (p, body) => {
   const r = await fetch(`${SB_URL}/rest/v1/${p}`, { method: 'POST', headers: serviceHeaders(keys.service), body: JSON.stringify(body) });
   if (!r.ok) throw new Error(await r.text());
@@ -59,7 +61,7 @@ const rest = async (p, body) => {
 const src = parseWorkbook(XLSX, fs.readFileSync(process.env.COCKPIT_XLSX || '/tmp/audit/live.xlsx'));
 await rest('rpc/ck_restore', { p_uid: T1.id, p_data: src.data, p_label: 'e2e' });
 
-const browser = await launch();
+browser = await launch();
 async function device(name, opts) {
   const ctx = await browser.newContext({ ...opts, acceptDownloads: true });
   const page = await ctx.newPage();
@@ -81,7 +83,7 @@ async function login(p, u = T1) {
 const waitText = (p, text, timeout = 15000) => p.waitForFunction((t) => document.body.innerText.includes(t), text, { timeout });
 const waitNoText = (p, text, timeout = 15000) => p.waitForFunction((t) => !document.body.innerText.includes(t), text, { timeout });
 async function newTx(p, { amount, label, mobile }) {
-  if (mobile) await p.click('.tabbar .fab'); else await p.keyboard.press('n');
+  if (mobile) await p.click('.tabbar .fab'); else await p.click('.side .btn.primary');
   await p.waitForSelector('.modal input.amount');
   await p.fill('.modal input.amount', amount);
   await p.click('.modal .catgrid .cat >> nth=0');
@@ -198,7 +200,9 @@ await step('Suppression sur un appareil → disparaît de l’autre ; récupéra
   assert.equal(data.deleted_at, null);
 });
 
+const closeModals = async (p) => { for (let i = 0; i < 4 && await p.$('.overlay'); i++) await p.keyboard.press('Escape'); };
 await step('Export Excel complet depuis l’application, relu sans erreur', async () => {
+  await closeModals(A.page);
   await A.page.goto(APP + '/#/settings');
   const [dl] = await Promise.all([A.page.waitForEvent('download'), A.page.click('text=Exporter en Excel')]);
   const file = '/tmp/e2e-export.xlsx'; await dl.saveAs(file);
@@ -211,6 +215,7 @@ await step('Export Excel complet depuis l’application, relu sans erreur', asyn
 await step('Point de restauration : créer, modifier, revenir en arrière', async () => {
   const { data: p, error } = await T1.client.rpc('create_restore_point', { p_label: 'e2e' });
   if (error) throw error;
+  await closeModals(A.page);
   await newTx(A.page, { amount: '1', label: `E2E à annuler ${tag}` });
   const { error: e2 } = await T1.client.rpc('restore_point', { p_id: p });
   if (e2) throw e2;
@@ -250,14 +255,16 @@ await step('Application installable (manifeste, service worker, icônes) et en-t
   }
 });
 
-// ---------- nettoyage ----------
-await browser.close();
+} catch (e) { results.push(['❌', 'Erreur fatale', 0, e.message]); console.error(e); } finally {
+// ---------- nettoyage (toujours) ----------
+if (browser) await browser.close().catch(() => {});
 for (const u of [T1, T2]) {
   await sql(env, `delete from public.change_log where user_id = '${u.id}'; delete from public.restore_points where user_id = '${u.id}'; delete from public.notif_log where user_id = '${u.id}';`);
   await admin.auth.admin.deleteUser(u.id);
 }
 const left = await sql(env, `select count(*)::int n from public.tx where user_id in ('${T1.id}', '${T2.id}')`);
 console.log(`Nettoyage : comptes de test supprimés (${left[0].n} ligne restante)`);
+}
 const lines = ['| | Test | Durée |', '|---|---|---:|', ...results.map(([s, n, d, e]) => `| ${s} | ${n}${e ? ` — ${e.split('\n')[0].replace(/\|/g, '/')}` : ''} | ${(d / 1000).toFixed(1)} s |`)];
 fs.writeFileSync('/tmp/e2e-results.md', lines.join('\n') + '\n');
 const bad = results.filter((r) => r[0] === '❌').length;

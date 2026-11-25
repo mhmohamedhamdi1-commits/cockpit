@@ -63,7 +63,7 @@ async function deploySupabase() {
   const shared = path.join(ROOT, 'supabase/functions/_shared');
   fs.mkdirSync(shared, { recursive: true });
   for (const f of ['core.js', 'util.js', 'schema.js']) fs.copyFileSync(path.join(ROOT, 'app/js', f), path.join(shared, f));
-  run('npx', ['supabase', 'functions', 'deploy', 'rappels', '--project-ref', REF, '--no-verify-jwt', '--use-api'], { SUPABASE_ACCESS_TOKEN: env.SUPABASE_ACCESS_TOKEN });
+  run('npx', ['supabase', 'functions', 'deploy', 'rappels', '--project-ref', REF, '--no-verify-jwt', '--use-api', '--yes'], { SUPABASE_ACCESS_TOKEN: env.SUPABASE_ACCESS_TOKEN });
   log('Fonction « rappels » déployée');
   await authConfig(env.COCKPIT_SIGNUP_LOCKED === '1');
 }
