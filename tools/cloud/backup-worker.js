@@ -62,6 +62,8 @@ export default {
     if (req.method === 'OPTIONS') return new Response(null, { headers: cors });
     const url = new URL(req.url);
     const json = (b, s = 200) => new Response(typeof b === 'string' ? b : JSON.stringify(b), { status: s, headers: { ...cors, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+    // déclenchement manuel par l'administrateur (test / sauvegarde immédiate)
+    if (url.pathname === '/run' && env.RUN_SECRET && req.headers.get('x-run-secret') === env.RUN_SECRET) return json(await runBackup(env));
     if (!(await owner(req, env))) return json({ error: 'non autorisé' }, 401);
     if (url.pathname === '/list') {
       const items = [];

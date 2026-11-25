@@ -167,7 +167,7 @@ APP_ORIGIN = "${env.COCKPIT_APP_URL || '*'}"
   const cfEnv = { CLOUDFLARE_API_TOKEN: env.CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID: acc };
   spawnSync('npx', ['wrangler', 'deploy', '--config', path.join(dir, 'wrangler.toml')], { cwd: dir, stdio: 'inherit', env: { ...process.env, ...cfEnv } });
   const keys = await apiKeys(env);
-  for (const [k, v] of [['SUPABASE_SERVICE_KEY', keys.service], ['BACKUP_KEY', env.BACKUP_KEY], ['OWNER_ID', env.COCKPIT_OWNER_ID]]) {
+  for (const [k, v] of [['SUPABASE_SERVICE_KEY', keys.service], ['BACKUP_KEY', env.BACKUP_KEY], ['OWNER_ID', env.COCKPIT_OWNER_ID], ['RUN_SECRET', env.CRON_SECRET]]) {
     await cf(env, 'PUT', `/accounts/${acc}/workers/scripts/${name}/secrets`, { name: k, text: v, type: 'secret_text' });
   }
   const url = `https://${name}.${sub}.workers.dev`;
