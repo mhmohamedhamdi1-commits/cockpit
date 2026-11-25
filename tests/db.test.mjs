@@ -41,6 +41,7 @@ before(async () => {
   await db.exec(readFileSync(new URL('../supabase/migrations/0002_logic.sql', import.meta.url), 'utf8'));
   await db.exec(readFileSync(new URL('../supabase/migrations/0004_accounts.sql', import.meta.url), 'utf8'));
   await db.exec(readFileSync(new URL('../supabase/migrations/0005_projets.sql', import.meta.url), 'utf8'));
+  await db.exec(readFileSync(new URL('../supabase/migrations/0006_bourse.sql', import.meta.url), 'utf8'));
   await as(A);
   await ops([
     { e: 'param', item: { cle: 'taux_mad_eur', valeur: '0.1' } },
@@ -382,4 +383,21 @@ test('déplacer un lot vers un autre projet entraîne ses locataires et opérati
   await ops([{ e: 'lot', item: { id: l.id, version: l.version, projet_id: p2 } }]);
   assert.equal((await q(`select projet_id from tenants where nom = 'T'`))[0].projet_id, p2);
   assert.equal((await q(`select projet_id from tx where lot = 'L1'`))[0].projet_id, p2);
+});
+
+test('bourse : ordres validés, privés, inclus dans l’export', async () => {
+  await db.exec('reset role');
+  const O = crypto.randomUUID(), Z = crypto.randomUUID();
+  await q(`insert into auth.users values ('${O}'), ('${Z}')`);
+  await as(O);
+  await ops([{ e: 'ordre', item: { date: '2026-01-10', symbole: ' cw8.pa ', nom: 'Amundi MSCI World', type: 'ETF', compte: 'PEA', sens: 'Achat', quantite: 3, prix: 540.5, frais: 1.99, devise: 'eur' } }]);
+  const [o] = await q('select symbole, devise, quantite from ordres');
+  assert.deepEqual([o.symbole, o.devise, Number(o.quantite)], ['CW8.PA', 'EUR', 3]);
+  await rejects(ops([{ e: 'ordre', item: { date: '2026-01-10', symbole: 'X', sens: 'Achat', quantite: 0, prix: 1 } }]), 'CK422');
+  await rejects(ops([{ e: 'ordre', item: { date: '2026-01-10', symbole: 'X', sens: 'Pari', quantite: 1, prix: 1 } }]), 'CK422');
+  await as(Z);
+  assert.equal((await q('select count(*)::int n from ordres'))[0].n, 0, 'invisible pour un autre compte');
+  await db.exec('reset role');
+  const [{ e }] = await q(`select public.ck_export('${O}') as e`);
+  assert.equal(e.ordres.length, 1);
 });

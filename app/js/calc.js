@@ -3,7 +3,8 @@ import { addMonths, monthsBetween, sum } from './util.js';
 import * as core from './core.js';
 
 export const inRange = (date, p) => { const m = date.slice(0, 7); return m >= p.from && m <= p.to; };
-export const weight = (t) => (t.activite === 'Immobilier' && S.immoView === 'mine' ? partOf(t.projetId) : 1);
+// Part : en consolidé toujours « mes parts » ; le choix Ma part / 100 % n'existe que dans l'écran Immobilier
+export const weight = (t) => (t.activite !== 'Immobilier' ? 1 : S.route === 'immo' && S.immoView === 'full' ? 1 : partOf(t.projetId));
 export const eurOf = (t) => t.montantEur * weight(t);
 
 export function txs({ period = S.period, activity = S.activity } = {}) {
@@ -34,7 +35,8 @@ export function prevPeriod(p = S.period) {
 // Buckets pour les graphiques : mois / trimestres / années selon la longueur
 export function buckets(p = S.period) {
   const ms = monthsBetween(p.from, p.to);
-  const mode = ms.length <= 18 ? 'm' : ms.length <= 48 ? 'q' : 'y';
+  const g = S.chartGran || 'auto';
+  const mode = g !== 'auto' ? g : ms.length <= 18 ? 'm' : ms.length <= 48 ? 'q' : 'y';
   const map = new Map();
   for (const m of ms) {
     let k, label;

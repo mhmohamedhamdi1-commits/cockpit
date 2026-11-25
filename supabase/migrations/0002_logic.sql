@@ -161,6 +161,17 @@ begin
     if btrim(coalesce(j ->> 'nom', '')) = '' then perform public.ck_err('nom du lot obligatoire'); end if;
     return j || jsonb_build_object('nom', btrim(j ->> 'nom'));
 
+  elsif p_tbl = 'ordres' then
+    d := public.ck_date(j ->> 'date');
+    if d is null then perform public.ck_err('date invalide'); end if;
+    if btrim(coalesce(j ->> 'symbole', '')) = '' then perform public.ck_err('choisis un titre'); end if;
+    if coalesce(j ->> 'sens', '') not in ('Achat', 'Vente', 'Dividende') then perform public.ck_err('sens invalide'); end if;
+    m := coalesce(public.ck_num(j ->> 'quantite'), 0);
+    if j ->> 'sens' in ('Achat', 'Vente') and m <= 0 then perform public.ck_err('la quantité doit être supérieure à 0'); end if;
+    if coalesce(public.ck_num(j ->> 'prix'), -1) < 0 then perform public.ck_err('prix invalide'); end if;
+    return j || jsonb_build_object('date', d, 'symbole', upper(btrim(j ->> 'symbole')), 'devise', upper(coalesce(nullif(j ->> 'devise', ''), 'EUR')),
+      'type', case when j ->> 'type' in ('Action', 'ETF', 'Fonds', 'Obligation', 'Crypto', 'Autre') then j ->> 'type' else 'Action' end);
+
   elsif p_tbl = 'rappels' then
     if btrim(coalesce(j ->> 'titre', '')) = '' then perform public.ck_err('titre du rappel obligatoire'); end if;
     d := public.ck_date(j ->> 'date');
@@ -202,7 +213,7 @@ end $$;
 create or replace function public.ck_table_of(p_entity text) returns text language sql immutable set search_path = public, pg_temp as $$
   select case p_entity when 'tx' then 'tx' when 'lot' then 'lots' when 'tenant' then 'tenants' when 'client' then 'clients'
     when 'invoice' then 'invoices' when 'recurring' then 'recurring' when 'account' then 'accounts'
-    when 'snapshot' then 'snapshots' when 'rappel' then 'rappels' when 'projet' then 'projets' end
+    when 'snapshot' then 'snapshots' when 'rappel' then 'rappels' when 'projet' then 'projets' when 'ordre' then 'ordres' end
 $$;
 
 -- ---------- Actions ----------
@@ -337,7 +348,7 @@ create or replace function public.ck_export(p_uid uuid) returns jsonb
 language plpgsql stable set search_path = public, pg_temp as $$
 declare t text; v jsonb := '{}'::jsonb; a jsonb;
 begin
-  foreach t in array array['projets','tx','categories','lots','tenants','clients','invoices','recurring','accounts','snapshots','params','rappels'] loop
+  foreach t in array array['projets','tx','categories','lots','tenants','clients','invoices','recurring','accounts','snapshots','params','rappels','ordres'] loop
     execute format('select coalesce(jsonb_agg(to_jsonb(x) - ''user_id'' order by x.seq), ''[]'') from public.%I x where user_id = $1 and deleted_at is null', t)
       into a using p_uid;
     v := v || jsonb_build_object(t, a);
@@ -365,7 +376,7 @@ declare t text; r jsonb; v_id uuid; keep uuid[]; cnt jsonb := '{}'::jsonb; n int
 begin
   perform public.ck_snapshot(p_uid, coalesce(p_label, 'Avant restauration'));
   perform set_config('cockpit.device', 'restauration', true);
-  foreach t in array array['projets','tx','categories','lots','tenants','clients','invoices','recurring','accounts','snapshots','params','rappels'] loop
+  foreach t in array array['projets','tx','categories','lots','tenants','clients','invoices','recurring','accounts','snapshots','params','rappels','ordres'] loop
     continue when jsonb_typeof(p_data -> t) is distinct from 'array';
     keep := '{}'; n := 0;
     for r in select * from jsonb_array_elements(p_data -> t) loop

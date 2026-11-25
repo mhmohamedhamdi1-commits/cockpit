@@ -5,6 +5,8 @@ import { ensureAuth, watchRecovery, logout } from './auth.js';
 import { sb } from './supa.js';
 import { computeAlerts } from './core.js';
 import { exportExcel } from './data.js';
+import { enhance, closeMax } from './enhance.js';
+import { setLang, LANGS } from './i18n.js';
 import { openTxForm } from './txform.js';
 import * as dashboard from './views/dashboard.js';
 import * as opsView from './views/ops.js';
@@ -13,6 +15,7 @@ import * as immo from './views/immo.js';
 import * as wealth from './views/wealth.js';
 import * as recurring from './views/recurring.js';
 import * as settings from './views/settings.js';
+import * as bourse from './views/bourse.js';
 
 const ROUTES = {
   dashboard: { label: 'Tableau de bord', ic: 'dash', v: dashboard },
@@ -20,6 +23,7 @@ const ROUTES = {
   freelance: { label: 'Freelance', ic: 'brief', v: freelance },
   immo: { label: 'Immobilier', ic: 'building', v: immo },
   wealth: { label: 'Patrimoine', ic: 'bank', v: wealth },
+  bourse: { label: 'Bourse', ic: 'trend', v: bourse },
   recurring: { label: 'Automatismes', ic: 'repeat', v: recurring },
   settings: { label: 'Paramètres', ic: 'sliders', v: settings },
 };
@@ -124,6 +128,11 @@ function renderTabbar() {
   }
 }
 
+function prefSelect(opts, value, onChange, title) {
+  const s = h('select', { class: 'prefsel', title, 'aria-label': title }, opts.map((o) => h('option', { value: o.value, selected: o.value === value }, o.label)));
+  s.addEventListener('change', () => onChange(s.value));
+  return s;
+}
 function ago(iso) {
   if (!iso) return 'jamais';
   const s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
@@ -151,6 +160,7 @@ function renderNav() {
       h('button', { class: 'btn sm', title: 'Synchroniser maintenant', onClick: () => flush().then(() => toast('Synchronisé')) }, icon('repeat', 15)),
       h('button', { class: 'btn sm', title: 'Exporter toutes les données dans un fichier Excel', onClick: () => exportExcel() }, icon('sheet', 15), 'Excel'),
       h('button', { class: 'btn sm', title: S.theme === 'dark' ? 'Mode clair' : 'Mode sombre', onClick: () => { S.theme = (document.documentElement.dataset.theme === 'dark') ? 'light' : 'dark'; savePrefs(); applyTheme(); renderNav(); } }, icon(document.documentElement.dataset.theme === 'dark' ? 'sun' : 'moon', 15))),
+    h('div', { class: 'prefrow' }, prefSelect(LANGS, S.lang || 'fr', (v) => { S.lang = v; savePrefs(); setLang(v); emit(); }, 'Langue'), prefSelect([{ value: 'EUR', label: '€ EUR' }, { value: 'MAD', label: 'MAD' }], S.displayCur || 'EUR', (v) => { S.displayCur = v; savePrefs(); reload(); }, 'Devise d’affichage')),
     h('div', { class: 'userbox' }, icon('user', 16), h('span', { title: S.user ? S.user.email : '' }, S.user ? S.user.email : ''), h('button', { class: 'btn sm', onClick: logout, title: 'Se déconnecter' }, 'Déconnexion')));
   renderTabbar();
 }
@@ -180,6 +190,7 @@ function renderView() {
   try { refs.scroll.append(h('div', { class: 'page' }, r.v.render())); }
   catch (e) { console.error(e); refs.scroll.append(h('div', { class: 'card' }, h('b', null, 'Erreur d’affichage'), h('pre', { style: { whiteSpace: 'pre-wrap' } }, String(e.stack || e)))); }
   refs.scroll.scrollTop = st;
+  enhance(refs.scroll);
 }
 function renderAll() { renderNav(); renderTop(); renderView(); document.title = `${ROUTES[S.route].label} — Cockpit`; updateBadge(); }
 
@@ -195,6 +206,7 @@ async function acceptInvitation(code) {
 }
 
 function route() {
+  closeMax();
   const [k0, qs0] = (location.hash || '#/dashboard').replace('#/', '').split('?');
   if (k0 === 'invitation') { const code = new URLSearchParams(qs0 || '').get('i'); if (code) { acceptInvitation(code); return; } }
   const [k, qs] = (location.hash || '#/dashboard').replace('#/', '').split('?');
@@ -229,7 +241,7 @@ function registerSW() {
 }
 
 (async function init() {
-  loadPrefs(); applyTheme();
+  loadPrefs(); applyTheme(); setLang(S.lang || 'fr');
   registerSW();
   watchRecovery();
   app.append(h('div', { class: 'loading' }, 'Chargement…'));
@@ -242,6 +254,8 @@ function registerSW() {
   catch (e) { clear(app); app.append(h('div', { class: 'loading' }, h('div', null, 'Impossible de charger les données : ' + e.message, h('div', { style: { marginTop: '12px', textAlign: 'center' } }, h('button', { class: 'btn', onClick: () => location.reload() }, 'Réessayer'))))); return; }
   buildShell();
   subscribe(renderAll);
+  // les tableaux redessinés à l'intérieur d'un écran (filtres…) sont aussi améliorés
+  let enhT; new MutationObserver(() => { clearTimeout(enhT); enhT = setTimeout(() => enhance(refs.scroll), 30); }).observe(refs.scroll, { childList: true, subtree: true });
   window.addEventListener('hashchange', route);
   route();
   await startSync();

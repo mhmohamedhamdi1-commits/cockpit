@@ -160,3 +160,170 @@ export function computeAlerts(ctx) {
   if (!last || daysBetween(last, ctx.today) > 35) out.push({ id: 'releve', kind: 'info', ic: 'bank', title: 'Mets à jour tes soldes', sub: last ? `Dernier relevé : ${fmtDate(last)}` : 'Aucun relevé enregistré', go: '#/wealth', label: 'Relevé' });
   return out;
 }
+
+// =====================================================================================
+// Trésorerie actuelle : cumul de TOUS les flux (courants, investissements, financements)
+// depuis la première opération. Perso + Freelance = compte en France ; chaque projet a la sienne.
+// =====================================================================================
+export function cashPosition(ctx, { partOf = () => 1, isMine = () => true } = {}) {
+  const toMadV = (t) => (t.devise === 'MAD' ? t.montant : t.montantEur / ctx.P.taux);
+  const sign = (t) => (t.sens === 'Revenu' ? 1 : -1);
+  const perso = { eur: 0, rev: 0, dep: 0, inv: 0, fin: 0, since: '' };
+  const projets = new Map();
+  for (const t of ctx.data.tx) {
+    if (t.activite === 'Immobilier') {
+      const k = t.projetId || '';
+      const p = projets.get(k) || { id: k, mad: 0, eur: 0, rev: 0, dep: 0, inv: 0, fin: 0 };
+      const v = toMadV(t) * sign(t);
+      p.mad += v; p.eur += t.montantEur * sign(t);
+      if (t.nature === 'Courant') { if (t.sens === 'Revenu') p.rev += toMadV(t); else p.dep += toMadV(t); }
+      else if (t.nature === 'Investissement') p.inv -= v; else p.fin += v;
+      projets.set(k, p);
+      continue;
+    }
+    if (!isMine(t)) continue;
+    const v = t.montantEur * sign(t);
+    perso.eur += v;
+    if (!perso.since || t.date < perso.since) perso.since = t.date;
+    if (t.nature === 'Courant') { if (t.sens === 'Revenu') perso.rev += t.montantEur; else perso.dep += t.montantEur; }
+    else if (t.nature === 'Investissement') perso.inv -= v; else perso.fin += v;
+  }
+  const list = [...projets.values()].map((p) => {
+    const pr = (ctx.data.projets || []).find((x) => x.id === p.id);
+    const part = partOf(p.id || null);
+    return { ...p, nom: pr ? pr.nom : 'Immobilier (sans projet)', part, mineMad: p.mad * part, mineEur: p.mad * part * ctx.P.taux, shared: pr ? !isMine(pr) : false };
+  }).sort((a, b) => a.nom.localeCompare(b.nom));
+  // dernier relevé de comptes (pour rapprochement)
+  const lastDate = ctx.data.snapshots.reduce((m, s) => (s.date > m ? s.date : m), '');
+  const releve = lastDate ? ctx.data.snapshots.filter((s) => s.date === lastDate) : [];
+  const dispoAcc = new Set(ctx.data.accounts.filter((a) => a.dispo === 'Oui').map((a) => a.nom));
+  return {
+    perso, projets: list,
+    totalMineEur: perso.eur + list.reduce((s, p) => s + p.mineEur, 0),
+    releve: lastDate ? { date: lastDate, total: releve.reduce((s, x) => s + x.soldeEur, 0), dispo: releve.filter((x) => dispoAcc.has(x.compte)).reduce((s, x) => s + x.soldeEur, 0) } : null,
+  };
+}
+
+// =====================================================================================
+// Santé financière (12 derniers mois glissants) : indicateurs verts / orange / rouges + recommandations
+// =====================================================================================
+const GRADE = { good: 100, warn: 60, bad: 20 };
+export function financialHealth(ctx, { weight = () => 1 } = {}) {
+  const cur = ctx.today.slice(0, 7);
+  const from12 = addMonths(cur, -12), from3 = addMonths(cur, -3);
+  const closed = (t) => { const m = t.date.slice(0, 7); return m >= from12 && m < cur; };   // 12 mois complets
+  const v = (t) => t.montantEur * weight(t);
+  let rev = 0, dep = 0, inv = 0, dep3 = 0, dep9 = 0;
+  const catNow = new Map(), catBefore = new Map(), incomeBy = new Map();
+  for (const t of ctx.data.tx) {
+    if (!closed(t)) continue;
+    const m = t.date.slice(0, 7);
+    if (t.nature === 'Courant') {
+      if (t.sens === 'Revenu') { rev += v(t); incomeBy.set(t.categorie, (incomeBy.get(t.categorie) || 0) + v(t)); }
+      else {
+        dep += v(t);
+        if (m >= from3) { dep3 += v(t); catNow.set(t.categorie, (catNow.get(t.categorie) || 0) + v(t)); }
+        else { dep9 += v(t); catBefore.set(t.categorie, (catBefore.get(t.categorie) || 0) + v(t)); }
+      }
+    } else if (t.nature === 'Investissement' && t.sens === 'Dépense' && t.activite !== 'Immobilier') inv += v(t);
+  }
+  const ind = [];
+  const monthlyRev = rev / 12, monthlyDep = dep / 12;
+  // 1. taux d'épargne
+  const rate = rev > 0 ? (rev - dep) / rev : null;
+  if (rate != null) ind.push({ id: 'epargne', label: 'Taux d’épargne', value: rate, fmt: 'pct', level: rate >= 0.2 ? 'good' : rate >= 0.1 ? 'warn' : 'bad',
+    text: rate >= 0.2 ? `Tu mets de côté ${Math.round(rate * 100)} % de tes revenus : au-dessus de l’objectif de 20 %.` : `Objectif conseillé : 20 % de tes revenus, soit ${eur(monthlyRev * 0.2)} par mois (aujourd’hui ${eur(Math.max(0, monthlyRev - monthlyDep))}).` });
+  // 2. épargne de précaution
+  const cash = cashPosition(ctx);
+  if (cash.releve && monthlyDep > 0) {
+    const months = cash.releve.dispo / monthlyDep;
+    ind.push({ id: 'precaution', label: 'Épargne de précaution', value: months, fmt: 'mois', level: months >= 6 ? 'good' : months >= 3 ? 'warn' : 'bad',
+      text: months >= 6 ? `${months.toFixed(1).replace('.', ',')} mois de dépenses couverts par ton disponible : confortable.` : `${months.toFixed(1).replace('.', ',')} mois couverts. Vise 3 à 6 mois de dépenses (${eur(monthlyDep * 3)} à ${eur(monthlyDep * 6)}) sur un compte disponible.` });
+  }
+  // 3. tendance des dépenses (3 derniers mois vs 9 précédents)
+  if (dep9 > 0) {
+    const trend = (dep3 / 3) / (dep9 / 9) - 1;
+    const up = [...catNow.entries()].map(([k, x]) => [k, x / 3 - (catBefore.get(k) || 0) / 9]).filter(([, d]) => d > 20).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    ind.push({ id: 'tendance', label: 'Tendance des dépenses', value: trend, fmt: 'delta', level: trend <= 0.05 ? 'good' : trend <= 0.2 ? 'warn' : 'bad',
+      text: trend <= 0.05 ? 'Tes dépenses des 3 derniers mois sont stables ou en baisse.' : `Dépenses en hausse de ${Math.round(trend * 100)} % sur les 3 derniers mois${up.length ? ` : ${up.map(([k, d]) => `${k} (+${eur(d)}/mois)`).join(', ')}` : ''}.` });
+  }
+  // 4. dépendance à une source de revenus
+  if (rev > 0 && incomeBy.size) {
+    const [topK, topV] = [...incomeBy.entries()].sort((a, b) => b[1] - a[1])[0];
+    const share = topV / rev;
+    ind.push({ id: 'revenus', label: 'Diversification des revenus', value: share, fmt: 'pct', level: share <= 0.6 ? 'good' : share <= 0.85 ? 'warn' : 'bad',
+      text: `${Math.round(share * 100)} % de tes revenus viennent de « ${topK} ».${share > 0.85 ? ' Une autre source (loyers, activité) réduirait le risque.' : ''}` });
+  }
+  // 5. effort d'investissement (hors immobilier, déjà dans les projets)
+  if (rev > 0) {
+    const ir = inv / rev;
+    ind.push({ id: 'invest', label: 'Effort d’investissement', value: ir, fmt: 'pct', level: ir >= 0.1 ? 'good' : ir > 0 ? 'warn' : 'bad',
+      text: ir >= 0.1 ? `${Math.round(ir * 100)} % de tes revenus investis sur 12 mois.` : `Investir au moins 10 % de tes revenus (${eur(monthlyRev * 0.1)}/mois) fait travailler ton épargne.` });
+  }
+  // 6. loyers encaissés (3 derniers mois, mes lots)
+  let exp = 0, paid = 0;
+  for (const l of ctx.lots) for (const m of [addMonths(cur, -1), addMonths(cur, -2), addMonths(cur, -3)]) { const c = rentCell(ctx, l.nom, m); exp += c.expected; paid += Math.min(c.paid, c.expected); }
+  if (exp > 0) { const r = paid / exp; ind.push({ id: 'loyers', label: 'Loyers encaissés (3 mois)', value: r, fmt: 'pct', level: r >= 0.97 ? 'good' : r >= 0.85 ? 'warn' : 'bad', text: r >= 0.97 ? 'Tous les loyers des 3 derniers mois sont encaissés.' : `${mad(exp - paid)} de loyers manquants sur 3 mois : relance les locataires concernés.` }); }
+  // 7. factures en retard
+  const late = ctx.data.invoices.filter((i) => i.statut === 'Envoyée' && i.emission && daysBetween(i.emission, ctx.today) > 30);
+  if (ctx.data.invoices.length) ind.push({ id: 'factures', label: 'Factures en retard', value: late.length, fmt: 'n', level: late.length ? 'bad' : 'good', text: late.length ? `${late.length} facture(s) impayée(s) depuis plus de 30 jours.` : 'Aucune facture en retard de paiement.' });
+  const score = ind.length ? Math.round(ind.reduce((s, i) => s + GRADE[i.level], 0) / ind.length) : null;
+  return { score, level: score == null ? 'info' : score >= 75 ? 'good' : score >= 50 ? 'warn' : 'bad', label: score == null ? '—' : score >= 85 ? 'Excellente' : score >= 75 ? 'Bonne' : score >= 50 ? 'À surveiller' : 'Fragile', indicators: ind, monthlyRev, monthlyDep };
+}
+
+// =====================================================================================
+// Bourse : positions, prix de revient (moyenne pondérée, méthode fiscale française), plus-values
+// =====================================================================================
+// ordres : { date, symbole, sens: Achat|Vente|Dividende, quantite, prix, frais, devise }
+// quotes : { SYMBOLE: { prix, devise } } ; fx : (devise) => taux vers EUR
+export function portfolio(ordres, quotes = {}, fx = (d) => (d === 'EUR' ? 1 : null)) {
+  const pos = new Map();
+  const sorted = [...ordres].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.seq || 0) - (b.seq || 0)));
+  for (const o of sorted) {
+    const k = o.symbole;
+    const p = pos.get(k) || { symbole: k, nom: o.nom || k, devise: o.devise || 'EUR', type: o.type || '', compte: o.compte || '', qty: 0, cost: 0, invested: 0, sold: 0, realized: 0, dividends: 0, fees: 0, first: o.date, orders: 0 };
+    const q = Number(o.quantite) || 0, px = Number(o.prix) || 0, fee = Number(o.frais) || 0;
+    const rate = fx(o.devise || p.devise) || 1;
+    p.orders++; p.fees += fee * rate;
+    if (o.nom) p.nom = o.nom;
+    if (o.sens === 'Achat') { p.cost += (q * px + fee) * rate; p.qty += q; p.invested += (q * px + fee) * rate; }
+    else if (o.sens === 'Vente') {
+      const pru = p.qty > 0 ? p.cost / p.qty : 0;
+      const sq = Math.min(q, p.qty);
+      const proceeds = (sq * px - fee) * rate;
+      p.realized += proceeds - pru * sq;
+      p.cost -= pru * sq; p.qty -= sq; p.sold += proceeds;
+    } else if (o.sens === 'Dividende') p.dividends += (q ? q * px : px) * rate - fee * rate;
+    pos.set(k, p);
+  }
+  const list = [...pos.values()].map((p) => {
+    const qt = quotes[p.symbole];
+    const rate = qt ? fx(qt.devise || p.devise) : null;
+    const price = qt && rate ? qt.prix * rate : null;
+    const value = price != null ? p.qty * price : null;
+    const pru = p.qty > 1e-9 ? p.cost / p.qty : 0;
+    const latent = value != null ? value - p.cost : null;
+    const gain = (latent || 0) + p.realized + p.dividends;
+    return { ...p, pru, price, priceLocal: qt ? qt.prix : null, change: qt ? qt.variation : null, value, latent, latentPct: latent != null && p.cost > 0 ? latent / p.cost : null,
+      gain, roi: p.invested > 0 ? gain / p.invested : null, open: p.qty > 1e-9 };
+  }).sort((a, b) => (b.value || b.cost) - (a.value || a.cost));
+  const open = list.filter((p) => p.open);
+  const tot = {
+    value: open.reduce((s, p) => s + (p.value ?? p.cost), 0), cost: open.reduce((s, p) => s + p.cost, 0),
+    invested: list.reduce((s, p) => s + p.invested, 0), realized: list.reduce((s, p) => s + p.realized, 0),
+    dividends: list.reduce((s, p) => s + p.dividends, 0), fees: list.reduce((s, p) => s + p.fees, 0), missing: open.filter((p) => p.value == null).length,
+  };
+  tot.latent = tot.value - tot.cost;
+  tot.gain = tot.latent + tot.realized + tot.dividends;
+  tot.roi = tot.invested > 0 ? tot.gain / tot.invested : null;
+  return { positions: list, open, total: tot };
+}
+// Simulation de vente : plus-value et impôt estimés (PFU 30 % par défaut ; PEA > 5 ans : 17,2 %)
+export function simulateSale(position, qty, price, { fee = 0, taxRate = 0.3 } = {}) {
+  const q = Math.min(qty, position.qty);
+  const proceeds = q * price - fee;
+  const costBasis = position.pru * q;
+  const gain = proceeds - costBasis;
+  const tax = gain > 0 ? gain * taxRate : 0;
+  return { qty: q, proceeds, costBasis, gain, gainPct: costBasis > 0 ? gain / costBasis : null, tax, net: proceeds - tax, remaining: position.qty - q };
+}

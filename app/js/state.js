@@ -9,6 +9,7 @@ import { sb, deviceLabel } from './supa.js';
 import { TABLES, BY_KEY, BY_ENTITY, fromDb, toDb } from './schema.js';
 import { buildIndex } from './core.js';
 import { idbGet, idbSet, idbClear } from './idb.js';
+import { setDisplayCurrency } from './util.js';
 
 export const S = {
   data: null, today: '', file: 'Base Cockpit (cloud)', dir: '',
@@ -29,7 +30,7 @@ export function loadPrefs() {
   try { Object.assign(S, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { /* ignore */ }
 }
 export function savePrefs() {
-  localStorage.setItem(KEY, JSON.stringify({ period: S.period, activity: S.activity, immoView: S.immoView, theme: S.theme, lastActivity: S.lastActivity, immoProjet: S.immoProjet || '' }));
+  localStorage.setItem(KEY, JSON.stringify({ period: S.period, activity: S.activity, immoView: S.immoView, theme: S.theme, lastActivity: S.lastActivity, immoProjet: S.immoProjet || '', chartGran: S.chartGran || 'auto', chartType: S.chartType || 'bar', collapsed: S.collapsed || {}, colOrder: S.colOrder || {}, lang: S.lang || 'fr', displayCur: S.displayCur || 'EUR' }));
 }
 
 // ---------- stockage local ----------
@@ -45,6 +46,7 @@ function rebuild() {
   S.data = d;
   S.today = today();
   Object.assign(S, buildIndex(d));
+  setDisplayCurrency(S.displayCur || 'EUR', S.displayCur === 'MAD' ? 1 / S.P.taux : 1);
   S.sync.pending = outbox.length;
 }
 const persist = debounce(() => {

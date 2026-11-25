@@ -9,7 +9,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import * as webpush from 'web-push';
-import { ROOT, REF, SB_URL, loadEnv, setEnv, need, mgmt, sql, apiKeys, cf, randomB64, randomHex } from './lib.mjs';
+import { execSync } from 'node:child_process';
+import { ROOT, REF, SB_URL, ENV_NAME, k, loadEnv, setEnv, need, mgmt, sql, apiKeys, cf, randomB64, randomHex } from './lib.mjs';
 
 const env = loadEnv();
 const DIST = path.join(ROOT, 'dist');
@@ -18,9 +19,9 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
 function ensureGenerated() {
   if (!env.VAPID_PUBLIC_KEY) {
-    const k = webpush.generateVAPIDKeys();
-    setEnv('VAPID_PUBLIC_KEY', k.publicKey); setEnv('VAPID_PRIVATE_KEY', k.privateKey);
-    env.VAPID_PUBLIC_KEY = k.publicKey; env.VAPID_PRIVATE_KEY = k.privateKey;
+    const vk = webpush.generateVAPIDKeys();
+    setEnv('VAPID_PUBLIC_KEY', vk.publicKey); setEnv('VAPID_PRIVATE_KEY', vk.privateKey);
+    env.VAPID_PUBLIC_KEY = vk.publicKey; env.VAPID_PRIVATE_KEY = vk.privateKey;
     log('Clés VAPID (notifications) générées');
   }
   if (!env.CRON_SECRET) { env.CRON_SECRET = randomHex(24); setEnv('CRON_SECRET', env.CRON_SECRET); }
@@ -33,12 +34,12 @@ function run(cmd, args, extraEnv = {}) {
 }
 
 async function publishableKey() {
-  if (env.SUPABASE_PUBLISHABLE_KEY) return env.SUPABASE_PUBLISHABLE_KEY;
+  if (env[k('SUPABASE_PUBLISHABLE_KEY')]) return env[k('SUPABASE_PUBLISHABLE_KEY')];
   if (env.COCKPIT_TEST_KEY) return env.COCKPIT_TEST_KEY;
   need(env, 'SUPABASE_ACCESS_TOKEN');
-  const k = (await apiKeys(env)).publishable;
-  setEnv('SUPABASE_PUBLISHABLE_KEY', k); env.SUPABASE_PUBLISHABLE_KEY = k;
-  return k;
+  const pk = (await apiKeys(env)).publishable;
+  setEnv(k('SUPABASE_PUBLISHABLE_KEY'), pk); env[k('SUPABASE_PUBLISHABLE_KEY')] = pk;
+  return pk;
 }
 
 // ---------------------------------------------------------------- Supabase
@@ -46,8 +47,8 @@ async function deploySupabase() {
   need(env, 'SUPABASE_ACCESS_TOKEN');
   ensureGenerated();
   const keys = await apiKeys(env);
-  if (!env.SUPABASE_PUBLISHABLE_KEY) { setEnv('SUPABASE_PUBLISHABLE_KEY', keys.publishable); env.SUPABASE_PUBLISHABLE_KEY = keys.publishable; }
-  for (const f of ['0001_schema.sql', '0002_logic.sql', '0004_accounts.sql', '0005_projets.sql']) { await sql(env, read('supabase/migrations/' + f)); log('Migration', f); }
+  if (!env[k('SUPABASE_PUBLISHABLE_KEY')]) { setEnv(k('SUPABASE_PUBLISHABLE_KEY'), keys.publishable); env[k('SUPABASE_PUBLISHABLE_KEY')] = keys.publishable; }
+  for (const f of ['0001_schema.sql', '0002_logic.sql', '0004_accounts.sql', '0005_projets.sql', '0006_bourse.sql']) { await sql(env, read('supabase/migrations/' + f)); log('Migration', f); }
   await sql(env, `do $$ begin
     if exists (select 1 from vault.secrets where name = 'cockpit_cron_secret') then
       perform vault.update_secret((select id from vault.secrets where name = 'cockpit_cron_secret'), '${env.CRON_SECRET}');
@@ -57,22 +58,24 @@ async function deploySupabase() {
   await mgmt(env, 'POST', `/v1/projects/${REF}/secrets`, [
     { name: 'VAPID_PUBLIC_KEY', value: env.VAPID_PUBLIC_KEY }, { name: 'VAPID_PRIVATE_KEY', value: env.VAPID_PRIVATE_KEY },
     { name: 'CRON_SECRET', value: env.CRON_SECRET }, { name: 'CK_SERVICE_KEY', value: keys.service },
-    { name: 'APP_URL', value: env.COCKPIT_APP_URL || '' }, { name: 'VAPID_CONTACT', value: env.COCKPIT_CONTACT || 'cockpit@example.com' },
+    { name: 'APP_URL', value: env[k('COCKPIT_APP_URL')] || '' }, { name: 'VAPID_CONTACT', value: env.COCKPIT_CONTACT || 'cockpit@example.com' },
   ]);
   log('Secrets de la fonction enregistrés');
   const shared = path.join(ROOT, 'supabase/functions/_shared');
   fs.mkdirSync(shared, { recursive: true });
   for (const f of ['core.js', 'util.js', 'schema.js']) fs.copyFileSync(path.join(ROOT, 'app/js', f), path.join(shared, f));
-  run('npx', ['supabase', 'functions', 'deploy', 'rappels', '--project-ref', REF, '--no-verify-jwt', '--use-api', '--yes'], { SUPABASE_ACCESS_TOKEN: env.SUPABASE_ACCESS_TOKEN });
-  log('Fonction « rappels » déployée');
-  await authConfig(env.COCKPIT_SIGNUP_LOCKED === '1');
+  for (const fn of ['rappels', 'bourse']) {
+    run('npx', ['supabase', 'functions', 'deploy', fn, '--project-ref', REF, '--no-verify-jwt', '--use-api', '--yes'], { SUPABASE_ACCESS_TOKEN: env.SUPABASE_ACCESS_TOKEN });
+    log(`Fonction « ${fn} » déployée`);
+  }
+  await authConfig(env[k('COCKPIT_SIGNUP_LOCKED')] === '1');
 }
 
 async function authConfig(lock) {
   const cur = await mgmt(env, 'GET', `/v1/projects/${REF}/config/auth`);
   const want = {
-    site_url: env.COCKPIT_APP_URL || cur.site_url,
-    uri_allow_list: [env.COCKPIT_APP_URL, env.COCKPIT_APP_URL && env.COCKPIT_APP_URL + '/**', 'http://localhost:8788', 'http://localhost:8788/**'].filter(Boolean).join(','),
+    site_url: env[k('COCKPIT_APP_URL')] || cur.site_url,
+    uri_allow_list: [env[k('COCKPIT_APP_URL')], env[k('COCKPIT_APP_URL')] && env[k('COCKPIT_APP_URL')] + '/**', 'http://localhost:8788', 'http://localhost:8788/**'].filter(Boolean).join(','),
     mailer_autoconfirm: true,               // pas d'e-mail de confirmation : l'inscription est fermée juste après
     password_min_length: 12,
     mfa_totp_enroll_enabled: true,
@@ -98,14 +101,14 @@ async function build() {
   fs.rmSync(DIST, { recursive: true, force: true });
   fs.cpSync(path.join(ROOT, 'app'), DIST, { recursive: true });
   const buildId = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
-  const locked = env.COCKPIT_SIGNUP_LOCKED === '1';
+  const locked = env[k('COCKPIT_SIGNUP_LOCKED')] === '1';
   fs.writeFileSync(path.join(DIST, 'config.js'), `// Généré le ${new Date().toISOString()} — configuration publique (aucun secret)
-export const CONFIG = ${JSON.stringify({ url: SB_URL, key, vapid: env.VAPID_PUBLIC_KEY, backupUrl: env.COCKPIT_BACKUP_URL || '__BACKUP_URL__', allowSignup: !locked, build: buildId }, null, 2)};
+export const CONFIG = ${JSON.stringify({ url: SB_URL, key, vapid: env.VAPID_PUBLIC_KEY, backupUrl: env[k('COCKPIT_BACKUP_URL')] || '__BACKUP_URL__', allowSignup: !locked, build: buildId }, null, 2)};
 `);
   const assets = ['/', ...walk(DIST).filter((f) => !['sw.js', '_headers'].includes(f) && !f.endsWith('.map')).map((f) => '/' + f)];
   const sw = fs.readFileSync(path.join(DIST, 'sw.js'), 'utf8').replace('__BUILD__', buildId).replace('__ASSETS__', JSON.stringify(assets));
   fs.writeFileSync(path.join(DIST, 'sw.js'), sw);
-  const connect = ["'self'", SB_URL, SB_URL.replace('https', 'wss'), env.COCKPIT_BACKUP_URL].filter(Boolean).join(' ');
+  const connect = ["'self'", SB_URL, SB_URL.replace('https', 'wss'), env[k('COCKPIT_BACKUP_URL')]].filter(Boolean).join(' ');
   fs.writeFileSync(path.join(DIST, '_headers'), `/*
   Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src ${connect}; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
   Strict-Transport-Security: max-age=31536000; includeSubDomains
@@ -125,12 +128,12 @@ export const CONFIG = ${JSON.stringify({ url: SB_URL, key, vapid: env.VAPID_PUBL
 
 async function deployApp() {
   need(env, 'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID');
-  const acc = env.CLOUDFLARE_ACCOUNT_ID, name = env.COCKPIT_PAGES_PROJECT || 'cockpit-finances';
+  const acc = env.CLOUDFLARE_ACCOUNT_ID, name = env[k('COCKPIT_PAGES_PROJECT')] || (ENV_NAME === 'dev' ? 'cockpit-finances-dev' : 'cockpit-finances');
   let proj;
   try { proj = await cf(env, 'GET', `/accounts/${acc}/pages/projects/${name}`); }
   catch { proj = await cf(env, 'POST', `/accounts/${acc}/pages/projects`, { name, production_branch: 'main' }); log('Projet Cloudflare Pages créé :', name); }
   const url = `https://${proj.subdomain}`;
-  if (env.COCKPIT_APP_URL !== url) { setEnv('COCKPIT_APP_URL', url); env.COCKPIT_APP_URL = url; if (env.SUPABASE_ACCESS_TOKEN) { await authConfig(env.COCKPIT_SIGNUP_LOCKED === '1'); await mgmt(env, 'POST', `/v1/projects/${REF}/secrets`, [{ name: 'APP_URL', value: url }]); } }
+  if (env[k('COCKPIT_APP_URL')] !== url) { setEnv(k('COCKPIT_APP_URL'), url); env[k('COCKPIT_APP_URL')] = url; if (env.SUPABASE_ACCESS_TOKEN) { await authConfig(env[k('COCKPIT_SIGNUP_LOCKED')] === '1'); await mgmt(env, 'POST', `/v1/projects/${REF}/secrets`, [{ name: 'APP_URL', value: url }]); } }
   await build();
   run('npx', ['wrangler', 'pages', 'deploy', 'dist', '--project-name', name, '--branch', 'main', '--commit-dirty=true'], { CLOUDFLARE_API_TOKEN: env.CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID: acc });
   log('Application publiée :', url);
@@ -162,7 +165,7 @@ id = "${ns.id}"
 [vars]
 SUPABASE_URL = "${SB_URL}"
 SUPABASE_PUBLISHABLE_KEY = "${await publishableKey()}"
-APP_ORIGIN = "${env.COCKPIT_APP_URL || '*'}"
+APP_ORIGIN = "${env[k('COCKPIT_APP_URL')] || '*'}"
 `);
   const cfEnv = { CLOUDFLARE_API_TOKEN: env.CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID: acc };
   spawnSync('npx', ['wrangler', 'deploy', '--config', path.join(dir, 'wrangler.toml')], { cwd: dir, stdio: 'inherit', env: { ...process.env, ...cfEnv } });
@@ -171,15 +174,26 @@ APP_ORIGIN = "${env.COCKPIT_APP_URL || '*'}"
     await cf(env, 'PUT', `/accounts/${acc}/workers/scripts/${name}/secrets`, { name: k, text: v, type: 'secret_text' });
   }
   const url = `https://${name}.${sub}.workers.dev`;
-  if (env.COCKPIT_BACKUP_URL !== url) { setEnv('COCKPIT_BACKUP_URL', url); env.COCKPIT_BACKUP_URL = url; }
+  if (env[k('COCKPIT_BACKUP_URL')] !== url) { setEnv(k('COCKPIT_BACKUP_URL'), url); env[k('COCKPIT_BACKUP_URL')] = url; }
   log('Sauvegarde externe déployée :', url, '(chaque nuit à 02:30 UTC)');
 }
 
+// ---------------------------------------------------------------- Garde-fou production
+function guardProd(cmd) {
+  if (ENV_NAME !== 'prod' || cmd === 'build' || process.argv.includes('--force')) return;
+  let branch = '', dirty = '';
+  try { branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: ROOT }).toString().trim(); dirty = execSync('git status --porcelain', { cwd: ROOT }).toString().trim(); } catch { /* hors git (CI) */ return; }
+  if (branch !== 'release') { console.error(`PRODUCTION : déploiement refusé depuis la branche « ${branch} ». Utilise la branche release (ou COCKPIT_ENV=dev pour le développement).`); process.exit(3); }
+  if (dirty) { console.error('PRODUCTION : des modifications ne sont pas commitées. Commite-les avant de déployer.'); process.exit(3); }
+}
+console.log(`▶ Environnement : ${ENV_NAME.toUpperCase()} (Supabase ${REF})`);
+
 // ---------------------------------------------------------------- Main
 const cmd = process.argv[2];
+guardProd(cmd);
 const steps = { supabase: deploySupabase, app: deployApp, worker: deployWorker, build,
-  lock: async () => { setEnv('COCKPIT_SIGNUP_LOCKED', '1'); env.COCKPIT_SIGNUP_LOCKED = '1'; await authConfig(true); await deployApp(); },
-  unlock: async () => { setEnv('COCKPIT_SIGNUP_LOCKED', '0'); env.COCKPIT_SIGNUP_LOCKED = '0'; await authConfig(false); await deployApp(); },
-  auth: async () => authConfig(env.COCKPIT_SIGNUP_LOCKED === '1') };
-if (!steps[cmd]) { console.log('Usage : node tools/cloud/deploy.mjs supabase|app|worker|lock|unlock|build|auth'); process.exit(1); }
+  lock: async () => { setEnv(k('COCKPIT_SIGNUP_LOCKED'), '1'); env[k('COCKPIT_SIGNUP_LOCKED')] = '1'; await authConfig(true); await deployApp(); },
+  unlock: async () => { setEnv(k('COCKPIT_SIGNUP_LOCKED'), '0'); env[k('COCKPIT_SIGNUP_LOCKED')] = '0'; await authConfig(false); await deployApp(); },
+  auth: async () => authConfig(env[k('COCKPIT_SIGNUP_LOCKED')] === '1') };
+if (!steps[cmd]) { console.log('Usage : [COCKPIT_ENV=dev] node tools/cloud/deploy.mjs supabase|app|worker|lock|unlock|build|auth [--force]'); process.exit(1); }
 steps[cmd]().catch((e) => { console.error('ÉCHEC :', e.message); process.exit(1); });

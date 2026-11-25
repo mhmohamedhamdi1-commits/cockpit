@@ -4,14 +4,20 @@ import { h, clear, icon } from './util.js';
 import { sb, isIOS } from './supa.js';
 import { CONFIG } from '../config.js';
 import { toast } from './ui.js';
+import { LANGS, setLang, getLang } from './i18n.js';
 
 const app = () => document.getElementById('app');
 
 function screen(title, sub, body) {
   const root = app(); clear(root);
   root.append(h('div', { class: 'auth' }, h('div', { class: 'auth-card card' },
-    h('div', { class: 'brand' }, h('div', { class: 'logo' }, icon('chart', 17)), 'Cockpit'),
+    h('div', { class: 'brand' }, h('div', { class: 'logo' }, icon('chart', 17)), 'Cockpit', langPick()),
     h('h1', null, title), sub ? h('p', { class: 'sec' }, sub) : null, body)));
+}
+function langPick() {
+  const s = h('select', { class: 'prefsel', style: { marginInlineStart: 'auto' }, 'aria-label': 'Langue' }, LANGS.map((l) => h('option', { value: l.value, selected: l.value === getLang() }, l.label)));
+  s.addEventListener('change', () => { try { const p = JSON.parse(localStorage.getItem('cockpit.prefs.v1') || '{}'); p.lang = s.value; localStorage.setItem('cockpit.prefs.v1', JSON.stringify(p)); } catch { /* */ } setLang(s.value); location.reload(); });
+  return s;
 }
 const errEl = () => h('div', { class: 'err', role: 'alert' });
 const fr = (e) => {

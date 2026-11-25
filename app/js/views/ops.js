@@ -41,7 +41,7 @@ export function render() {
   const natSel = select([{ value: '', label: 'Toutes natures' }, { value: 'Courant', label: 'Courant' }, { value: 'Investissement', label: 'Investissement' }, { value: 'Financement', label: 'Financement' }], F.nature);
   natSel.addEventListener('change', () => { F.nature = natSel.value; F.limit = 120; draw(); });
   draw();
-  out.append(h('div', { class: 'card' },
+  out.append(h('div', { class: 'card' }, h('header', null, h('h2', null, 'Liste des opérations'), h('span', { class: 'sub' }, `${base.length} sur la période`)),
     h('div', { class: 'filters', style: { marginBottom: '12px' } }, h('div', { class: 'grow' }, icon('search', 17), search), sensSel, catSel, natSel), body));
   return out;
 }

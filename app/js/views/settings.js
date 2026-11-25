@@ -8,6 +8,7 @@ import { exportExcel, importExcel, listRestorePoints, createRestorePoint, backTo
 import { pushStatus, enablePush, disablePush, listDevices, removeDevice, testPush } from '../push.js';
 import { CONFIG } from '../../config.js';
 import { openLot } from './immo.js';
+import { LANGS, setLang } from '../i18n.js';
 import { isMine } from '../state.js';
 
 export function meta() { return { title: 'Paramètres', sub: 'Compte, notifications, données, taux et catégories', period: false, immoToggle: false }; }
@@ -68,7 +69,11 @@ export function render() {
   const lotCard = h('div', { class: 'card' }, h('header', null, h('h2', null, 'Lots immobiliers'), h('span', { class: 'sub' }, 'regroupés par projet (Immobilier)'), h('div', { class: 'right' }, h('button', { class: 'btn sm', onClick: () => openLot() }, icon('plus', 15), 'Lot'))),
     h('table', { class: 'tbl' }, h('tbody', null, S.lots.filter(isMine).map((l) => h('tr', { class: 'click', onClick: () => openLot(l) }, h('td', null, l.code), h('td', null, l.nom, h('span', { class: 'sub' }, pname(l.projetId))), h('td', { class: 'r num muted' }, l.loyer ? `${l.loyer} MAD` : ''))))));
   const theme = h('div', { class: 'card' }, h('header', null, h('h2', null, 'Apparence')),
-    segmented([{ value: 'auto', label: 'Automatique' }, { value: 'light', label: 'Clair' }, { value: 'dark', label: 'Sombre' }], S.theme, (v) => { S.theme = v; savePrefs(); applyTheme(); }));
+    h('div', { class: 'stack' },
+      field('Langue', segmented(LANGS, S.lang || 'fr', (v) => { S.lang = v; savePrefs(); setLang(v); emit(); })),
+      field('Devise d’affichage', segmented([{ value: 'EUR', label: '€ Euro' }, { value: 'MAD', label: 'Dirham (MAD)' }], S.displayCur || 'EUR', async (v) => { S.displayCur = v; savePrefs(); const { reload } = await import('../state.js'); reload(); }), 'Les montants en euros sont convertis au taux du jour'),
+      field('Thème', segmented([{ value: 'auto', label: 'Automatique' }, { value: 'light', label: 'Clair' }, { value: 'dark', label: 'Sombre' }], S.theme, (v) => { S.theme = v; savePrefs(); applyTheme(); })),
+      h('button', { class: 'btn ghost', onClick: async () => { const { resetLayout } = await import('../enhance.js'); resetLayout(); emit(); toast('Disposition des tableaux réinitialisée'); } }, 'Réinitialiser cartes repliées et ordre des colonnes')));
   return [h('div', { class: 'row2e' }, accountCard(), notifCard()), dataCard(), installCard(), general, fisc, h('div', { class: 'row2e' }, catCard, h('div', { style: { display: 'flex', flexDirection: 'column', gap: '18px' } }, lotCard, theme))];
 }
 

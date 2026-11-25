@@ -45,6 +45,10 @@ export const TABLES = [
     { k: 'devise', x: 'Devise', w: 8 }, { k: 'soldeEur', db: 'solde_eur', x: 'Solde EUR', t: 'money', w: 14 }] },
   { key: 'params', entity: 'param', sheet: 'Paramètres', tbl: 'tblParametres', id: false, cols: [
     { k: 'cle', x: 'Paramètre', w: 22 }, { k: 'valeur', x: 'Valeur', w: 16 }, { k: 'libelle', x: 'Description', w: 60 }] },
+  { key: 'ordres', entity: 'ordre', sheet: 'Bourse', tbl: 'tblBourse', id: true, cols: [
+    { k: 'date', x: 'Date', t: 'date', w: 12 }, { k: 'symbole', x: 'Symbole', w: 12 }, { k: 'nom', x: 'Titre', w: 30 }, { k: 'type', x: 'Type', w: 10 },
+    { k: 'compte', x: 'Compte', w: 12 }, { k: 'sens', x: 'Sens', w: 10 }, { k: 'quantite', x: 'Quantité', t: 'rate', w: 12 },
+    { k: 'prix', x: 'Prix unitaire', t: 'rate', w: 14 }, { k: 'frais', x: 'Frais', t: 'money', w: 10 }, { k: 'devise', x: 'Devise', w: 8 }, { k: 'note', x: 'Note', w: 30 }] },
   { key: 'rappels', entity: 'rappel', sheet: 'Rappels', tbl: 'tblRappels', id: true, cols: [
     { k: 'titre', x: 'Rappel', w: 36 }, { k: 'categorie', x: 'Catégorie', w: 14 }, { k: 'frequence', x: 'Fréquence', w: 13 },
     { k: 'date', x: 'Échéance', t: 'date', w: 13 }, { k: 'avance', x: 'Prévenir (jours avant)', t: 'int', w: 20 },

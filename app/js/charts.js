@@ -1,4 +1,5 @@
-import { h, sv, clear, compact, eur, monthShort, num0 } from './util.js';
+import { h, sv, clear, compact as compact0, eur, monthShort, num0, displayRate } from './util.js';
+const compact = (v) => compact0(v * displayRate());
 
 // ---------- Tooltip ----------
 let tip;
@@ -146,3 +147,93 @@ export function barList(items, { fmt = eur, color, total } = {}) {
       h('div', { class: 'vl num' }, fmt(it.value), total ? h('span', { class: 'muted', style: { fontWeight: 500, marginLeft: '6px', fontSize: '12px' } }, Math.round((it.value / total) * 100) + '%') : null))));
 }
 export { num0 };
+
+// ---------- Graphique multi-séries : barres groupées, courbes, aires ----------
+// labels : [{ key, label, sub? }], series : [{ name, color, values }]
+export function seriesChart({ labels, series, type = 'bar', height = 250, fmt = eur, title = 'Graphique' }) {
+  const el = h('div', { class: 'chart' });
+  const draw = (W) => {
+    clear(el);
+    const m = { l: 50, r: 8, t: 10, b: 36 }, H = height, pw = W - m.l - m.r, ph = H - m.t - m.b;
+    const all = series.flatMap((s) => s.values);
+    let hi = Math.max(0, ...all), lo = Math.min(0, ...all);
+    hi = niceMax(hi || 1); lo = lo < 0 ? -niceMax(-lo) : 0;
+    const Y = (v) => m.t + ((hi - v) / (hi - lo)) * ph;
+    const svg = sv('svg', { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': title });
+    for (let i = 0; i <= 4; i++) {
+      const v = lo + ((hi - lo) / 4) * i, yy = Y(v);
+      svg.append(sv('line', { x1: m.l, x2: W - m.r, y1: yy, y2: yy, style: `stroke:var(${Math.abs(v) < 1e-9 ? '--line' : '--line-2'})` }));
+      svg.append(sv('text', { x: m.l - 8, y: yy + 4, 'text-anchor': 'end', style: 'fill:var(--ink-3)', 'font-size': 11.5 }, compact(v)));
+    }
+    const n = labels.length, slot = pw / Math.max(1, n);
+    const cx = (i) => m.l + slot * i + slot / 2;
+    const band = sv('rect', { y: m.t, height: ph, width: slot, rx: 6, style: 'fill:var(--hover)', opacity: 0 });
+    svg.append(band);
+    if (type === 'bar') {
+      const gw = Math.min(slot * 0.7, 26 * series.length + 8), bw = (gw - 2 * (series.length - 1)) / series.length;
+      series.forEach((s, si) => s.values.forEach((v, i) => {
+        const x = cx(i) - gw / 2 + si * (bw + 2), y0 = Y(0), y1 = Y(v);
+        const hgt = Math.abs(y1 - y0);
+        if (hgt < 0.5) return;
+        svg.append(v >= 0 ? sv('path', { d: roundedTop(x, y1, bw, hgt, 4), style: `fill:${s.color}` }) : sv('rect', { x, y: y0, width: bw, height: hgt, rx: 3, style: `fill:${s.color}` }));
+      }));
+    } else {
+      series.forEach((s) => {
+        if (!s.values.length) return;
+        const d = s.values.map((v, i) => `${i ? 'L' : 'M'}${cx(i)},${Y(v)}`).join(' ');
+        if (type === 'area') svg.append(sv('path', { d: `${d} L${cx(s.values.length - 1)},${Y(0)} L${cx(0)},${Y(0)} Z`, style: `fill:${s.color}`, opacity: 0.16 }));
+        svg.append(sv('path', { d, fill: 'none', style: `stroke:${s.color}`, 'stroke-width': 2.4, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+        if (n <= 40) s.values.forEach((v, i) => svg.append(sv('circle', { cx: cx(i), cy: Y(v), r: 3, style: `fill:${s.color};stroke:var(--surface)`, 'stroke-width': 1.5 })));
+      });
+    }
+    const every = Math.ceil(n / Math.max(1, Math.floor(pw / 46)));
+    labels.forEach((l, i) => {
+      if (i % every === 0) {
+        svg.append(sv('text', { x: cx(i), y: H - m.b + 17, 'text-anchor': 'middle', style: 'fill:var(--ink-3)', 'font-size': 11.5 }, l.label));
+        if (l.sub) svg.append(sv('text', { x: cx(i), y: H - m.b + 31, 'text-anchor': 'middle', style: 'fill:var(--ink-3)', 'font-size': 10.5, 'font-weight': 700 }, l.sub));
+      }
+      const hit = sv('rect', { x: m.l + slot * i, y: m.t, width: slot, height: ph + 20, fill: 'transparent' });
+      const show = (e) => {
+        band.setAttribute('x', m.l + slot * i); band.setAttribute('opacity', 1);
+        showTip(e, `<div class="th">${l.full || l.label}</div>${series.map((s) => `<div class="tr"><span><i style="background:${s.color}"></i>${s.name}</span><b class="num">${fmt(s.values[i])}</b></div>`).join('')}`);
+      };
+      hit.addEventListener('mousemove', show); hit.addEventListener('touchstart', (e) => show(e.touches[0]), { passive: true });
+      hit.addEventListener('mouseleave', () => { band.setAttribute('opacity', 0); hideTip(); });
+      svg.append(hit);
+    });
+    el.append(svg);
+  };
+  observe(el, draw);
+  return el;
+}
+
+// ---------- Anneau (répartition) ----------
+export function donut(items, { size = 170, fmt = eur, center = '' } = {}) {
+  const total = items.reduce((s, i) => s + Math.max(0, i.value), 0) || 1;
+  const r = size / 2 - 12, c = size / 2, sw = 22;
+  const svg = sv('svg', { width: size, height: size, viewBox: `0 0 ${size} ${size}`, role: 'img', 'aria-label': 'Répartition' });
+  let a0 = -Math.PI / 2;
+  items.forEach((it) => {
+    const a1 = a0 + (Math.max(0, it.value) / total) * Math.PI * 2;
+    const large = a1 - a0 > Math.PI ? 1 : 0;
+    const p = (a) => `${c + r * Math.cos(a)},${c + r * Math.sin(a)}`;
+    const arc = sv('path', { d: a1 - a0 >= Math.PI * 2 - 1e-6 ? `M${c},${c - r} A${r},${r} 0 1 1 ${c - 0.01},${c - r}` : `M${p(a0)} A${r},${r} 0 ${large} 1 ${p(a1)}`, fill: 'none', style: `stroke:${it.color}`, 'stroke-width': sw });
+    arc.addEventListener('mousemove', (e) => showTip(e, `<div class="th">${it.label}</div><div class="tr"><span>${Math.round((it.value / total) * 100)} %</span><b class="num">${fmt(it.value)}</b></div>`));
+    arc.addEventListener('mouseleave', hideTip);
+    svg.append(arc);
+    a0 = a1;
+  });
+  svg.append(sv('text', { x: c, y: c + 5, 'text-anchor': 'middle', style: 'fill:var(--ink)', 'font-size': 15, 'font-weight': 700 }, center));
+  return svg;
+}
+export const PALETTE = ['#007AFF', '#34C759', '#FF9500', '#AF52DE', '#FF2D55', '#5AC8FA', '#FFCC00', '#5856D6', '#A2845E', '#8E8E93'];
+
+// ---------- Anneau de score (santé) ----------
+export function scoreRing(score, level, { size = 92 } = {}) {
+  const r = size / 2 - 8, c = size / 2, len = 2 * Math.PI * r;
+  const color = { good: 'var(--good)', warn: 'var(--warn)', bad: 'var(--crit)', info: 'var(--ink-3)' }[level];
+  return sv('svg', { width: size, height: size, viewBox: `0 0 ${size} ${size}`, role: 'img', 'aria-label': `Score ${score}` },
+    sv('circle', { cx: c, cy: c, r, fill: 'none', style: 'stroke:var(--hover)', 'stroke-width': 9 }),
+    sv('circle', { cx: c, cy: c, r, fill: 'none', style: `stroke:${color}`, 'stroke-width': 9, 'stroke-linecap': 'round', 'stroke-dasharray': `${(len * (score || 0)) / 100} ${len}`, transform: `rotate(-90 ${c} ${c})` }),
+    sv('text', { x: c, y: c + 7, 'text-anchor': 'middle', style: 'fill:var(--ink)', 'font-size': 22, 'font-weight': 750 }, score == null ? '—' : String(score)));
+}

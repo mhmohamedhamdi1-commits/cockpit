@@ -6,8 +6,20 @@ import crypto from 'node:crypto';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 export const ENV_FILE = path.join(ROOT, '.env');
-export const REF = 'gliensrtmkczalbhhodm';
+// Environnement cible : COCKPIT_ENV=dev (projet Supabase + site de développement) ou prod (par défaut)
+export const ENV_NAME = process.env.COCKPIT_ENV === 'dev' ? 'dev' : 'prod';
+const PROD_REF = 'gliensrtmkczalbhhodm';
+function devRef() {
+  if (process.env.DEV_REF) return process.env.DEV_REF;
+  if (!existsSync(ENV_FILE)) return null;
+  const m = readFileSync(ENV_FILE, 'utf8').match(/^DEV_REF=(.+)$/m);
+  return m ? m[1].trim() : null;
+}
+export const REF = ENV_NAME === 'dev' ? devRef() : PROD_REF;
+if (ENV_NAME === 'dev' && !REF) { console.error('Environnement dev : DEV_REF manquant dans .env (référence du projet Supabase cockpit-dev).'); process.exit(2); }
 export const SB_URL = `https://${REF}.supabase.co`;
+// Variables propres à l'environnement : en dev, préfixe DEV_ (ex. DEV_SUPABASE_PUBLISHABLE_KEY, DEV_COCKPIT_APP_URL)
+export const k = (name) => (ENV_NAME === 'dev' ? 'DEV_' + name : name);
 
 export function loadEnv() {
   const env = {};
@@ -17,7 +29,7 @@ export function loadEnv() {
       if (m) env[m[1]] = m[2].replace(/^["']|["']$/g, '');
     }
   }
-  return { ...env, ...Object.fromEntries(Object.entries(process.env).filter(([k]) => /^(SUPABASE_ACCESS_TOKEN|CLOUDFLARE_|COCKPIT_)/.test(k))) };
+  return { ...env, ...Object.fromEntries(Object.entries(process.env).filter(([x]) => /^(SUPABASE_ACCESS_TOKEN|SUPABASE_PUBLISHABLE_KEY|CLOUDFLARE_|COCKPIT_|DEV_|VAPID_|CRON_SECRET|BACKUP_KEY)/.test(x))) };
 }
 export function setEnv(k, v) {
   appendFileSync(ENV_FILE, `${existsSync(ENV_FILE) && !readFileSync(ENV_FILE, 'utf8').endsWith('\n') ? '\n' : ''}${k}=${v}\n`, { mode: 0o600 });

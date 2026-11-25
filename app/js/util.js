@@ -67,6 +67,14 @@ const ICONS = {
   wallet: 'M20 7H5a2 2 0 0 1 0-4h13v4M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4M21 12v4h-4a2 2 0 0 1 0-4z',
   undo: 'M3 7v6h6M21 17a9 9 0 0 0-15-6.7L3 13',
   chart: 'M3 3v18h18M7 14l4-4 4 4 5-6',
+  chevup: 'm18 15-6-6-6 6',
+  chevdown: 'm6 9 6 6 6-6',
+  maximize: 'M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3',
+  minimize: 'M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3',
+  message: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
+  trend: 'M22 7l-8.5 8.5-5-5L2 17M16 7h6v6',
+  globe: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z',
+  heart: 'M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z',
 };
 export function icon(name, size = 18) {
   const s = sv('svg', { viewBox: '0 0 24 24', width: size, height: size, class: 'i', 'aria-hidden': 'true' });
@@ -84,9 +92,14 @@ export const num2 = (v) => fixMinus(nf2.format(v || 0));
 export const num1 = (v) => fixMinus(nf1.format(v || 0));
 export function money(v, cur = 'EUR', dec = 0) {
   const n = dec === 2 ? num2(v) : num0(v);
-  return cur === 'EUR' ? `${n} €` : `${n} ${cur}`;
+  return cur === 'EUR' ? `${n} €` : cur === 'USD' ? `${n} $` : `${n} ${cur}`;
 }
-export const eur = (v, dec = 0) => money(v, 'EUR', dec);
+// Devise d'affichage des montants en euros (EUR par défaut ; MAD = conversion au taux du jour)
+let DISPLAY = { cur: 'EUR', rate: 1 };
+export function setDisplayCurrency(cur, rateFromEur) { DISPLAY = { cur: cur || 'EUR', rate: rateFromEur > 0 ? rateFromEur : 1 }; }
+export const displayRate = () => DISPLAY.rate;
+export const displayCur = () => DISPLAY.cur;
+export const eur = (v, dec = 0) => money((v || 0) * DISPLAY.rate, DISPLAY.cur, dec);
 export const mad = (v, dec = 0) => money(v, 'MAD', dec);
 export function compact(v) {
   const a = Math.abs(v);
@@ -98,14 +111,20 @@ export function compact(v) {
 export const pct = (v, d = 0) => (v == null || !isFinite(v) ? '—' : fixMinus((v * 100).toFixed(d).replace('.', ',')) + ' %');
 
 // ---------- Dates ----------
-const MS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
-const ML = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+const MONTHS = {
+  fr: [['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'], ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']],
+  en: [['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']],
+  ar: [['يناير', 'فبراير', 'مارس', 'أبريل', 'ماي', 'يونيو', 'يوليوز', 'غشت', 'شتنبر', 'أكتوبر', 'نونبر', 'دجنبر'], ['يناير', 'فبراير', 'مارس', 'أبريل', 'ماي', 'يونيو', 'يوليوز', 'غشت', 'شتنبر', 'أكتوبر', 'نونبر', 'دجنبر']],
+};
+let MS = MONTHS.fr[0], ML = MONTHS.fr[1];
+const monthNamesRef = [...MONTHS.fr[1]];
+export function setLocale(l) { [MS, ML] = MONTHS[l] || MONTHS.fr; monthNamesRef.splice(0, 12, ...ML); }
 export const monthKey = (d) => d.slice(0, 7);
 export const monthShort = (k) => MS[+k.slice(5, 7) - 1];
 export const monthLabel = (k) => `${MS[+k.slice(5, 7) - 1]} ${k.slice(0, 4)}`;
 export const monthLong = (k) => `${ML[+k.slice(5, 7) - 1]} ${k.slice(0, 4)}`;
 export const monthName = (m) => ML[m - 1];
-export const monthNames = ML;
+export const monthNames = monthNamesRef;
 export function addMonths(k, n) {
   const y = +k.slice(0, 4), m = +k.slice(5, 7) - 1 + n;
   const yy = y + Math.floor(m / 12), mm = ((m % 12) + 12) % 12;

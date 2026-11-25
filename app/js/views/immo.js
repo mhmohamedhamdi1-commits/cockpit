@@ -2,7 +2,7 @@ import { h, icon, eur, mad, num0, pct, monthsBetween, monthShort, monthLong, mon
 import { S, ops, upsert, del, todayMonth, emit, savePrefs, isMine, projetsVisibles, membershipOf, partOf, projetOfLot } from '../state.js';
 import { sb } from '../supa.js';
 import { txs, rentCell, tenancyFor, activeTenants, summarize } from '../calc.js';
-import { modal, field, select, confirmBox, empty, toast } from '../ui.js';
+import { modal, field, select, confirmBox, empty, toast, segmented } from '../ui.js';
 import { openTxForm } from '../txform.js';
 import { kpi, catChip, amountEl } from './common.js';
 import { barList } from '../charts.js';
@@ -56,7 +56,7 @@ export function openCollect(lot, month) {
   const m = modal({ title: `Encaisser le loyer`, sub: `${ten.nom} · ${shortLot(lot)} · ${monthLong(month)}`, width: 480,
     body: [h('div', { class: 'field' }, h('label', null, 'Loyer (MAD)'), loyer, h('div', { class: 'hint' }, `Loyer convenu : ${mad(ten.loyer)}${c.paid ? ` · déjà reçu : ${mad(c.paid)}` : ''}`)),
       h('div', { class: 'grid2' }, field('Charges eau / élec. / ménage (MAD)', charges), field('Date de réception', date)), total],
-    footer: [h('span', { class: 'sp' }), h('button', { class: 'btn', onClick: () => m.close() }, 'Annuler'), h('button', { class: 'btn primary lg', onClick: go }, icon('check', 17), 'Encaisser')] });
+    footer: [h('button', { class: 'btn', onClick: () => { m.close(); openRelance(ten, month, Math.max(0, (c.expected || ten.loyer) - c.paid)); } }, icon('message', 16), 'Relancer'), h('span', { class: 'sp' }), h('button', { class: 'btn', onClick: () => m.close() }, 'Annuler'), h('button', { class: 'btn primary lg', onClick: go }, icon('check', 17), 'Encaisser')] });
   loyer.focus(); loyer.select();
 }
 export function openCollectAll(month) {
@@ -190,7 +190,7 @@ export function render() {
       h('tbody', null, tenants.map((t) => { const active = !t.sortie || t.sortie >= S.today;
         return h('tr', { class: (isMine(t) ? 'click' : '') + (active ? '' : ' dim'), onClick: () => { if (isMine(t)) openTenantForm(t); } }, h('td', null, shortLot(t.lot)), h('td', null, t.nom, !active ? h('span', { class: 'sub' }, `Parti le ${fmtDate(t.sortie)}`) : t.sortie ? h('span', { class: 'sub' }, `Sortie prévue le ${fmtDate(t.sortie)}`) : null),
           h('td', { class: 'r num' }, mad(t.loyer)), h('td', { class: 'r num' }, t.charges ? mad(t.charges) : '—'), h('td', null, fmtDate(t.entree)), h('td', { class: 'r num' }, t.caution ? mad(t.caution) : '—'), h('td', { class: 'muted' }, t.contact || ''),
-          h('td', { class: 'r' }, active && !t.sortie && isMine(t) ? h('button', { class: 'btn sm', onClick: (e) => { e.stopPropagation(); openDeparture(t); } }, 'Départ') : null)); }))) : empty('Aucun locataire', 'Ajoute ton premier locataire.'));
+          h('td', { class: 'r', style: { whiteSpace: 'nowrap' } }, (() => { const u = active && isMine(t) ? unpaidOf(t) : []; return u.length ? h('button', { class: 'btn sm', title: 'Relancer par SMS / WhatsApp', onClick: (e) => { e.stopPropagation(); openRelance(t, u[0].month, u.reduce((s, x) => s + x.amount, 0)); } }, icon('message', 14), 'Relancer') : null; })(), ' ', active && !t.sortie && isMine(t) ? h('button', { class: 'btn sm', onClick: (e) => { e.stopPropagation(); openDeparture(t); } }, 'Départ') : null)); }))) : empty('Aucun locataire', 'Ajoute ton premier locataire.'));
 
   // dépenses du projet
   const m = new Map();
@@ -326,4 +326,49 @@ function openShare(p) {
       const { pull } = await import('../state.js'); await pull(); emit(); draw(); label.value = ''; part.value = '';
     } }, icon('plus', 15), 'Créer un lien d’invitation'), out],
     footer: [h('span', { class: 'sp' }), h('button', { class: 'btn', onClick: () => m.close() }, 'Fermer')] });
+}
+
+// ---------- Relance d'un locataire (SMS / WhatsApp, envoyée par toi) ----------
+const MOIS_AR = ['يناير', 'فبراير', 'مارس', 'أبريل', 'ماي', 'يونيو', 'يوليوز', 'غشت', 'شتنبر', 'أكتوبر', 'نونبر', 'دجنبر'];
+function relanceText(lang, ten, month, amount) {
+  const m = +month.slice(5, 7) - 1, y = month.slice(0, 4);
+  const amt = Math.round(amount).toLocaleString('fr-FR').replace(/ /g, ' ');
+  if (lang === 'ar') return `السلام عليكم ${ten.nom}،\nنذكركم بأداء واجب الكراء لشهر ${MOIS_AR[m]} ${y} بمبلغ ${amt} درهم.\nالمرجو تسوية المبلغ في أقرب الآجال.\nشكرا جزيلا.`;
+  return `Bonjour ${ten.nom},\nNous vous rappelons le paiement du loyer de ${monthLong(month)} (${amt} MAD).\nMerci de le régler dès que possible.\nCordialement.`;
+}
+const phoneDigits = (p) => String(p || '').replace(/[^\d+]/g, '').replace(/^00/, '+').replace(/^0(?=[67])/, '+212');
+export function openRelance(ten, month, amount) {
+  if (!isMine(ten)) return toast('Projet partagé en lecture seule.', 'error');
+  let lang = 'ar';
+  const phone = h('input', { type: 'tel', value: phoneDigits(ten.contact), placeholder: '+2126…' });
+  const text = h('textarea', { rows: 6, dir: 'auto', style: { fontSize: '16px' } }, relanceText(lang, ten, month, amount));
+  const langSeg = segmented([{ value: 'ar', label: 'العربية' }, { value: 'fr', label: 'Français' }], lang, (v) => { lang = v; text.value = relanceText(v, ten, month, amount); });
+  const log = h('input', { type: 'checkbox', checked: true });
+  const note = async (canal) => {
+    if (!log.checked) return;
+    const line = `Relance ${canal} du ${new Date().toLocaleDateString('fr-FR')} (loyer ${monthLong(month)}, ${Math.round(amount)} MAD)`;
+    await ops([upsert('tenant', { ...ten, note: [line, ten.note].filter(Boolean).join('\n') })]);
+  };
+  const go = async (canal) => {
+    const num = phoneDigits(phone.value);
+    if (!/^\+?\d{8,15}$/.test(num)) return toast('Numéro de téléphone invalide.', 'error');
+    const body = encodeURIComponent(text.value);
+    const url = canal === 'SMS' ? `sms:${num}${/iPhone|iPad|Mac/.test(navigator.userAgent) ? '&' : '?'}body=${body}` : `https://wa.me/${num.replace('+', '')}?text=${body}`;
+    window.open(url, canal === 'SMS' ? '_self' : '_blank');
+    await note(canal);
+    m.close();
+  };
+  const m = modal({ title: `Relancer ${ten.nom}`, sub: `${shortLot(ten.lot)} · loyer de ${monthLong(month)} · ${mad(amount)} attendus`, width: 520, body: [
+    h('div', { class: 'split' }, h('span', { class: 'lbl' }, 'Langue du message'), langSeg),
+    field('Téléphone du locataire', phone, ten.contact ? null : 'Aucun numéro dans la fiche : saisis-le (il sera conservé si tu le notes dans la fiche).'),
+    field('Message (modifiable)', text),
+    h('label', { class: 'split', style: { fontSize: '13px' } }, log, 'Noter la relance dans la fiche du locataire'),
+    h('div', { class: 'note' }, 'Le message s’ouvre dans Messages ou WhatsApp : c’est toi qui appuies sur Envoyer.')],
+  footer: [h('span', { class: 'sp' }), h('button', { class: 'btn', onClick: () => go('WhatsApp') }, icon('message', 16), 'WhatsApp'), h('button', { class: 'btn primary lg', onClick: () => go('SMS') }, icon('send', 16), 'SMS')] });
+}
+// Loyers impayés d'un locataire (mois en retard / partiels sur 6 mois)
+export function unpaidOf(ten) {
+  const cur = todayMonth(), out = [];
+  for (let i = 0; i < 6; i++) { const m = addMonths(cur, -i); const c = rentCell(ten.lot, m); if (c.tenant && c.tenant.id === ten.id && ['late', 'part', 'due'].includes(c.status)) out.push({ month: m, amount: c.expected - c.paid }); }
+  return out;
 }

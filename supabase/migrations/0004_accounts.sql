@@ -81,7 +81,7 @@ declare v_uid uuid := public.ck_require_aal2(); t text;
 begin
   if p_confirm is distinct from 'SUPPRIMER' then perform public.ck_err('confirmation manquante'); end if;
   delete from public.projet_membres where owner_id = v_uid or user_id = v_uid;
-  foreach t in array array['projets','tx','categories','lots','tenants','clients','invoices','recurring','accounts','snapshots','params','rappels','push_subscriptions','notif_log','restore_points','change_log'] loop
+  foreach t in array array['projets','ordres','tx','categories','lots','tenants','clients','invoices','recurring','accounts','snapshots','params','rappels','push_subscriptions','notif_log','restore_points','change_log'] loop
     execute format('delete from public.%I where user_id = $1', t) using v_uid;
   end loop;
   delete from auth.users where id = v_uid;
