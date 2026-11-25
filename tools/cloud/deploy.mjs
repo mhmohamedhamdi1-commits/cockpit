@@ -47,7 +47,7 @@ async function deploySupabase() {
   ensureGenerated();
   const keys = await apiKeys(env);
   if (!env.SUPABASE_PUBLISHABLE_KEY) { setEnv('SUPABASE_PUBLISHABLE_KEY', keys.publishable); env.SUPABASE_PUBLISHABLE_KEY = keys.publishable; }
-  for (const f of ['0001_schema.sql', '0002_logic.sql']) { await sql(env, read('supabase/migrations/' + f)); log('Migration', f); }
+  for (const f of ['0001_schema.sql', '0002_logic.sql', '0004_accounts.sql']) { await sql(env, read('supabase/migrations/' + f)); log('Migration', f); }
   await sql(env, `do $$ begin
     if exists (select 1 from vault.secrets where name = 'cockpit_cron_secret') then
       perform vault.update_secret((select id from vault.secrets where name = 'cockpit_cron_secret'), '${env.CRON_SECRET}');
@@ -138,7 +138,7 @@ async function deployApp() {
 
 // ---------------------------------------------------------------- Sauvegarde externe
 async function deployWorker() {
-  need(env, 'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'SUPABASE_ACCESS_TOKEN', 'COCKPIT_OWNER_ID');
+  need(env, 'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'SUPABASE_ACCESS_TOKEN');
   ensureGenerated();
   const acc = env.CLOUDFLARE_ACCOUNT_ID, name = 'cockpit-backup';
   const nss = await cf(env, 'GET', `/accounts/${acc}/storage/kv/namespaces?per_page=100`);
@@ -167,7 +167,7 @@ APP_ORIGIN = "${env.COCKPIT_APP_URL || '*'}"
   const cfEnv = { CLOUDFLARE_API_TOKEN: env.CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID: acc };
   spawnSync('npx', ['wrangler', 'deploy', '--config', path.join(dir, 'wrangler.toml')], { cwd: dir, stdio: 'inherit', env: { ...process.env, ...cfEnv } });
   const keys = await apiKeys(env);
-  for (const [k, v] of [['SUPABASE_SERVICE_KEY', keys.service], ['BACKUP_KEY', env.BACKUP_KEY], ['OWNER_ID', env.COCKPIT_OWNER_ID], ['RUN_SECRET', env.CRON_SECRET]]) {
+  for (const [k, v] of [['SUPABASE_SERVICE_KEY', keys.service], ['BACKUP_KEY', env.BACKUP_KEY], ['RUN_SECRET', env.CRON_SECRET]]) {
     await cf(env, 'PUT', `/accounts/${acc}/workers/scripts/${name}/secrets`, { name: k, text: v, type: 'secret_text' });
   }
   const url = `https://${name}.${sub}.workers.dev`;
@@ -179,6 +179,7 @@ APP_ORIGIN = "${env.COCKPIT_APP_URL || '*'}"
 const cmd = process.argv[2];
 const steps = { supabase: deploySupabase, app: deployApp, worker: deployWorker, build,
   lock: async () => { setEnv('COCKPIT_SIGNUP_LOCKED', '1'); env.COCKPIT_SIGNUP_LOCKED = '1'; await authConfig(true); await deployApp(); },
+  unlock: async () => { setEnv('COCKPIT_SIGNUP_LOCKED', '0'); env.COCKPIT_SIGNUP_LOCKED = '0'; await authConfig(false); await deployApp(); },
   auth: async () => authConfig(env.COCKPIT_SIGNUP_LOCKED === '1') };
-if (!steps[cmd]) { console.log('Usage : node tools/cloud/deploy.mjs supabase|app|worker|lock|build|auth'); process.exit(1); }
+if (!steps[cmd]) { console.log('Usage : node tools/cloud/deploy.mjs supabase|app|worker|lock|unlock|build|auth'); process.exit(1); }
 steps[cmd]().catch((e) => { console.error('ÉCHEC :', e.message); process.exit(1); });

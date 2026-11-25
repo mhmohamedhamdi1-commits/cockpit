@@ -3,7 +3,7 @@ import { S, ops, upsert, del, setParam, action, savePrefs, flush, emit } from '.
 import { modal, field, select, confirmBox, segmented, toast, empty } from '../ui.js';
 import { applyTheme } from '../main.js';
 import { sb, isIOS, isStandalone } from '../supa.js';
-import { listFactors, addFactor, verifyFactor, removeFactor, changePassword } from '../auth.js';
+import { listFactors, addFactor, verifyFactor, removeFactor, changePassword, logout } from '../auth.js';
 import { exportExcel, importExcel, listRestorePoints, createRestorePoint, backToPoint, openHistory, backupsEnabled, listBackups, downloadBackup, restoreBackup } from '../data.js';
 import { pushStatus, enablePush, disablePush, listDevices, removeDevice, testPush } from '../push.js';
 import { CONFIG } from '../../config.js';
@@ -54,8 +54,11 @@ function openLot(l = {}) {
 export function render() {
   const general = h('div', { class: 'card' }, h('header', null, h('h2', null, 'Général')),
     h('div', { class: 'grid3' }, paramInput('Prénom', 'nom', { type: 'text' }), paramInput('Taux de change : 1 MAD = … €', 'taux_mad_eur', { step: 0.0001, hint: 'Sert aux nouvelles opérations en MAD' }), paramInput('Ma part du projet immobilier (%)', 'part_immo', { pctMode: true, step: 1, hint: 'Pondère l’immobilier dans le tableau de bord' })),
-    h('div', { class: 'row-actions', style: { marginTop: '14px' } }, h('button', { class: 'btn', onClick: async () => { if (await confirmBox(`Recalculer en euros toutes les opérations et soldes en MAD avec le taux actuel (1 MAD = ${S.P.taux.toFixed(4).replace('.', ',')} €) ?`, { ok: 'Recalculer' })) await ops([action('recompute_rates')], 'Historique MAD recalculé'); } }, icon('repeat', 16), 'Appliquer ce taux à tout l’historique MAD'),
-      h('span', { class: 'note', style: { alignSelf: 'center' } }, 'Par défaut chaque opération garde le taux du jour où elle a été saisie.')));
+    fxCard(),
+    h('div', { class: 'row-actions', style: { marginTop: '14px' } },
+      h('button', { class: 'btn', onClick: async () => { if (await confirmBox('Recalculer chaque opération et relevé en MAD avec le taux réel du jour où elle a eu lieu (disponible depuis mars 2024 ; avant, le taux actuel est utilisé) ? Chaque montant modifié reste annulable dans l’historique.', { ok: 'Recalculer' })) await ops([action('recompute_rates', { mode: 'historique' })], 'Historique MAD recalculé aux taux réels'); } }, icon('repeat', 16), 'Taux réel à la date de chaque opération'),
+      h('button', { class: 'btn ghost', onClick: async () => { if (await confirmBox(`Recalculer toutes les opérations et soldes en MAD avec le taux actuel (1 MAD = ${S.P.taux.toFixed(4).replace('.', ',')} €) ?`, { ok: 'Recalculer' })) await ops([action('recompute_rates')], 'Historique MAD recalculé'); } }, 'Appliquer le taux actuel partout'),
+      h('span', { class: 'note', style: { alignSelf: 'center' } }, 'Les nouvelles opérations en MAD prennent automatiquement le taux réel de leur date.')));
   const fisc = h('div', { class: 'card' }, h('header', null, h('h2', null, 'Freelance — seuils et taux'), h('span', { class: 'sub' }, 'à vérifier chaque année')),
     h('div', { class: 'grid3' }, paramInput('Début de la micro-entreprise', 'micro_debut', { type: 'date', hint: 'Les CA avant cette date ne comptent pas ; le 1er exercice est proratisé' }), paramInput('Plafond micro-BNC (€ HT)', 'seuil_micro', { step: 100 }), paramInput('Franchise TVA (€ HT)', 'seuil_tva', { step: 100 }), paramInput('Seuil majoré TVA (€ HT)', 'seuil_tva_maj', { step: 100 }),
       paramInput('Cotisations sociales (%)', 'taux_cotis', { pctMode: true, step: 0.1 }), paramInput('Formation professionnelle (%)', 'taux_cfp', { pctMode: true, step: 0.05 }), paramInput('Provision conseillée (%)', 'taux_provision', { pctMode: true, step: 1, hint: 'Cotisations + impôt : estimation à valider avec un expert-comptable' })));
@@ -93,7 +96,8 @@ function accountCard() {
       h('div', { class: 'row-actions' },
         h('button', { class: 'btn', onClick: openAddFactor }, icon('key', 16), 'Ajouter un code de secours'),
         h('button', { class: 'btn', onClick: openPassword }, icon('edit', 16), 'Changer le mot de passe'),
-        h('button', { class: 'btn danger', onClick: async () => { if (await confirmBox('Se déconnecter de cet appareil ? La copie locale des données y sera effacée.', { ok: 'Se déconnecter', danger: true })) { await flush().catch(() => {}); await sb.auth.signOut(); } } }, 'Se déconnecter')));
+        h('button', { class: 'btn', onClick: logout }, icon('user', 16), 'Se déconnecter'),
+        h('button', { class: 'btn ghost danger', onClick: openDeleteAccount }, icon('trash', 16), 'Supprimer mon compte')));
   })();
   return card;
 }
@@ -187,4 +191,38 @@ function installCard() {
   return h('div', { class: 'card' }, h('header', null, h('h2', null, 'Installer l’application')),
     isIOS() ? h('ol', { class: 'steps' }, h('li', null, 'Dans Safari, touche le bouton Partager (carré avec une flèche).'), h('li', null, 'Choisis « Sur l’écran d’accueil », puis « Ajouter ».'), h('li', null, 'Ouvre Cockpit depuis l’icône : plein écran, notifications possibles.'))
       : h('ol', { class: 'steps' }, h('li', null, 'Dans Edge : menu « … » › Applications › « Installer Cockpit » (ou l’icône ⊕ dans la barre d’adresse).'), h('li', null, 'Cockpit apparaît dans le menu Démarrer et peut être épinglé à la barre des tâches.')));
+}
+
+// ---------- Taux de change réel ----------
+function fxCard() {
+  const P = Object.fromEntries(S.data.params.map((p) => [p.cle, p.valeur]));
+  const auto = (P.taux_auto ?? 'Oui') !== 'Non';
+  const info = h('span', { class: 'muted' }, 'Taux du marché : chargement…');
+  const t = h('button', { type: 'button', class: 'toggle' + (auto ? ' on' : ''), role: 'switch', 'aria-checked': String(auto) });
+  t.addEventListener('click', async () => { const on = !t.classList.contains('on'); t.classList.toggle('on', on); await ops([setParam('taux_auto', on ? 'Oui' : 'Non')], on ? 'Taux mis à jour automatiquement chaque jour' : 'Taux manuel'); });
+  sb.from('fx_rates').select('date,rate,source').eq('pair', 'MAD/EUR').order('date', { ascending: false }).limit(1).then(({ data }) => {
+    const r = data && data[0];
+    clear(info);
+    info.append(r ? `Taux réel du ${new Date(r.date + 'T12:00:00').toLocaleDateString('fr-FR')} : 1 MAD = ${Number(r.rate).toFixed(5).replace('.', ',')} € (1 € = ${(1 / r.rate).toFixed(3).replace('.', ',')} MAD) · source ${r.source.replace(' (historique)', '')}` : 'Taux du marché indisponible pour le moment');
+  });
+  return h('div', { class: 'fxbox' }, h('b', null, `1 MAD = ${S.P.taux.toFixed(4).replace('.', ',')} €`), info, h('label', { class: 'split', style: { marginLeft: 'auto', fontWeight: 600, fontSize: '13px' } }, 'Mise à jour automatique', t));
+}
+
+// ---------- Suppression du compte ----------
+function openDeleteAccount() {
+  const input = h('input', { type: 'text', placeholder: 'SUPPRIMER', autocomplete: 'off' });
+  const go = h('button', { class: 'btn danger', disabled: true }, 'Supprimer définitivement');
+  input.addEventListener('input', () => { go.disabled = input.value.trim() !== 'SUPPRIMER'; });
+  go.addEventListener('click', async () => {
+    go.disabled = true;
+    const { error } = await sb.rpc('delete_my_account', { p_confirm: 'SUPPRIMER' });
+    if (error) { toast(error.message, 'error'); go.disabled = false; return; }
+    toast('Compte supprimé. Toutes tes données ont été effacées.');
+    await sb.auth.signOut().catch(() => {});
+  });
+  const m = modal({ title: 'Supprimer mon compte', width: 480, body: [
+    h('div', { class: 'infobox', style: { background: 'var(--crit-bg)', color: 'var(--crit-ink)' } }, 'Toutes tes données (opérations, factures, locataires, historique, points de restauration) seront effacées définitivement, sur tous tes appareils. Les sauvegardes externes sont effacées lors de la sauvegarde suivante.'),
+    h('p', { class: 'sec' }, 'Conseil : exporte d’abord tes données en Excel (Paramètres › Données).'),
+    field('Pour confirmer, tape SUPPRIMER', input)],
+  footer: [h('span', { class: 'sp' }), h('button', { class: 'btn', onClick: () => m.close() }, 'Annuler'), go] });
 }

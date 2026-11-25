@@ -45,6 +45,29 @@ async function loadData(uid: string) {
   return data;
 }
 
+// ---------- Taux de change réel MAD -> EUR (une fois par jour) ----------
+async function fetchRate(): Promise<{ rate: number; source: string } | null> {
+  try {
+    const r = await fetch('https://open.er-api.com/v6/latest/MAD', { signal: AbortSignal.timeout(10000) });
+    const j = await r.json();
+    if (j.result === 'success' && j.rates && j.rates.EUR > 0) return { rate: j.rates.EUR, source: 'open.er-api.com' };
+  } catch (e) { console.error('fx er-api', e); }
+  try {
+    const r = await fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/mad.json', { signal: AbortSignal.timeout(10000) });
+    const j = await r.json();
+    if (j.mad && j.mad.eur > 0) return { rate: j.mad.eur, source: 'fawazahmed0/currency-api' };
+  } catch (e) { console.error('fx fawazahmed0', e); }
+  return null;
+}
+async function ensureFx(today: string) {
+  const { data } = await admin.from('fx_rates').select('date').eq('pair', 'MAD/EUR').eq('date', today).limit(1);
+  if (data && data.length) return null;
+  const fx = await fetchRate();
+  if (!fx || fx.rate < 0.05 || fx.rate > 0.2) return { error: 'taux indisponible ou aberrant', fx };   // garde-fou
+  const { data: n, error } = await admin.rpc('ck_fx_store', { p_date: today, p_rate: fx.rate, p_source: fx.source });
+  return error ? { error: error.message } : { ...fx, comptes_mis_a_jour: n };
+}
+
 type Note = { key: string; title: string; body: string; url: string; tag?: string };
 
 async function compute(uid: string, now: ReturnType<typeof paris>, forceHour?: number) {
@@ -149,6 +172,7 @@ Deno.serve(async (req) => {
   // --- appel planifié ---
   if (CRON_SECRET && req.headers.get('x-cron-secret') === CRON_SECRET) {
     const now = paris();
+    const fx = await ensureFx(now.date).catch((e) => ({ error: e.message }));
     const { data: users } = await admin.from('push_subscriptions').select('user_id');
     const ids = [...new Set((users || []).map((u: any) => u.user_id))];
     const report: unknown[] = [];
@@ -164,7 +188,7 @@ Deno.serve(async (req) => {
         report.push({ notes: notes.length, sent: n });
       } catch (e: any) { console.error(e); report.push({ error: e.message }); }
     }
-    return json({ ok: true, at: now, report });
+    return json({ ok: true, at: now, fx, report });
   }
 
   // --- test depuis l'application ---

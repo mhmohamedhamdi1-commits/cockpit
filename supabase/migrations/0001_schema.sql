@@ -208,6 +208,21 @@ begin
   end loop;
 end $$;
 
+-- ---------- Taux de change (communs à tous les comptes, non personnels) ----------
+create table if not exists public.fx_rates (
+  date date not null,
+  pair text not null default 'MAD/EUR',
+  rate numeric(14, 8) not null check (rate > 0),
+  source text not null default '',
+  fetched_at timestamptz not null default now(),
+  primary key (pair, date)
+);
+alter table public.fx_rates enable row level security;
+drop policy if exists read_all on public.fx_rates;
+create policy read_all on public.fx_rates for select to authenticated using (true);
+revoke all on public.fx_rates from anon, public;
+grant select on public.fx_rates to authenticated;
+
 -- ---------- Notifications ----------
 create table if not exists public.push_subscriptions (
   id uuid primary key default gen_random_uuid(),

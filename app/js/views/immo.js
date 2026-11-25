@@ -6,7 +6,7 @@ import { openTxForm } from '../txform.js';
 import { kpi, catChip, amountEl } from './common.js';
 import { barList } from '../charts.js';
 
-export function meta() { return { title: 'Immobilier', sub: 'Amal 1 — loyers, locataires et trésorerie', immoToggle: true }; }
+export function meta() { return { title: 'Immobilier', sub: 'Loyers, locataires et trésorerie', immoToggle: true }; }
 export function badge() { return 0; }
 
 const toMad = (t) => (t.devise === 'MAD' ? t.montant : t.montantEur / S.P.taux);

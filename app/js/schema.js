@@ -81,7 +81,7 @@ export function toDb(def, o) {
 
 export const DEFAULT_PARAMS = [
   ['taux_mad_eur', '0.093', 'Taux de change : 1 MAD = x EUR (sert à convertir les opérations en MAD)'],
-  ['part_immo', '0.67', 'Ma part du projet immobilier (Amal 1), entre 0 et 1'],
+  ['part_immo', '0.67', 'Ma part des biens immobiliers suivis, entre 0 et 1'],
   ['micro_debut', '2027-01-01', 'Début de la micro-entreprise : seuls les CA à partir de cette date comptent pour les plafonds (le 1er exercice est proratisé au nombre de jours)'],
   ['seuil_micro', '83600', 'Plafond de CA annuel HT du régime micro-BNC (2026-2028)'],
   ['seuil_tva', '37500', 'Seuil de franchise en base de TVA (prestations de services)'],
@@ -90,6 +90,7 @@ export const DEFAULT_PARAMS = [
   ['taux_cfp', '0.002', 'Contribution à la formation professionnelle (% du CA)'],
   ['taux_provision', '0.40', 'Part de chaque encaissement freelance à mettre de côté (cotisations + impôt) — estimation à valider avec un expert-comptable'],
   ['nom', 'Mohamed', 'Prénom affiché dans l\'application'],
+  ['taux_auto', 'Oui', 'Mettre à jour automatiquement le taux MAD/EUR chaque jour (taux réel du marché)'],
   // Notifications
   ['notif_heure', '8', 'Heure (Paris) du point du matin envoyé sur tes appareils'],
   ['notif_factures', 'Oui', 'Notifier les factures en retard de paiement et à envoyer'],

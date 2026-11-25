@@ -255,6 +255,64 @@ await step('Application installable (manifeste, service worker, icônes) et en-t
   }
 });
 
+
+await step('Nouvel utilisateur par l’interface : inscription, code de sécurité, base vide et privée, déconnexion visible, suppression du compte', async () => {
+  const N = await device('nouveau', devices['iPhone 14']);
+  const p = N.page;
+  const email = `e2e-signup-${crypto.randomBytes(3).toString('hex')}@cockpit.test`, password = crypto.randomBytes(12).toString('hex');
+  await p.goto(APP + '/');
+  await p.click('text=Pas encore de compte ? Créer un compte');
+  await p.fill('input[type=email]', email);
+  await p.fill('input[autocomplete=new-password] >> nth=0', password);
+  await p.fill('input[autocomplete=new-password] >> nth=1', password);
+  await p.click('button[type=submit]');
+  await p.waitForSelector('code.secret', { timeout: 20000 });
+  const secret = (await p.innerText('code.secret')).replace(/\s/g, '');
+  await p.fill('input.otp', totp(secret));
+  await p.waitForSelector('.page', { timeout: 30000 });
+  await p.goto(APP + '/#/ops');
+  await waitText(p, 'Aucune opération');
+  await p.click('.tabbar .fab');
+  await p.waitForSelector('.modal .catgrid .cat');
+  const nCats = await p.locator('.modal .cat').count();
+  assert.ok(nCats >= 5, 'catégories de départ présentes');
+  await p.keyboard.press('Escape');
+  const { data: u } = await admin.auth.admin.listUsers({ perPage: 1000 });
+  const nu = u.users.find((x) => x.email === email);
+  const [{ n }] = await sql(env, `select count(*)::int n from public.tx where user_id = '${nu.id}'`);
+  assert.equal(n, 0, 'aucune donnée d’un autre compte');
+  // déconnexion depuis le menu « Plus »
+  await p.click('.tabbar button:has-text("Plus")');
+  await p.click('.morelogout');
+  await p.click('.overlay:last-child .modal footer .btn.primary');
+  await p.waitForSelector('input[type=email]', { timeout: 15000 });
+  // reconnexion puis suppression du compte
+  await p.fill('input[type=email]', email); await p.fill('input[type=password]', password); await p.click('button[type=submit]');
+  await p.waitForSelector('input.otp'); await new Promise((r) => setTimeout(r, 31000 - (Date.now() % 30000)));
+  await p.fill('input.otp', totp(secret));
+  await p.waitForSelector('.page', { timeout: 30000 });
+  await p.goto(APP + '/#/settings');
+  await p.click('text=Supprimer mon compte');
+  await p.fill('.modal input[placeholder=SUPPRIMER]', 'SUPPRIMER');
+  await p.click('.modal footer .btn.danger');
+  await p.waitForSelector('input[type=email]', { timeout: 20000 });
+  const [{ c }] = await sql(env, `select count(*)::int c from auth.users where email = '${email}'`);
+  assert.equal(c, 0, 'compte supprimé');
+  assert.deepEqual(p.errors, []);
+  await N.ctx.close();
+});
+
+await step('Taux de change réel affiché et appliqué aux nouvelles opérations en MAD', async () => {
+  await A.page.keyboard.press('Escape');
+  await A.page.goto(APP + '/#/settings');
+  await waitText(A.page, 'Taux réel du');
+  const [fx] = await sql(env, "select rate from public.fx_rates where pair = 'MAD/EUR' order by date desc limit 1");
+  const { error } = await T1.client.rpc('apply_ops', { p_ops: [{ e: 'tx', op: 'upsert', item: { date: new Date().toISOString().slice(0, 10), activite: 'Immobilier', sens: 'Revenu', categorie: 'Loyer', montant: 1000, devise: 'MAD', libelle: `E2E taux ${tag}` } }] });
+  if (error) throw error;
+  const { data } = await T1.client.from('tx').select('taux').eq('libelle', `E2E taux ${tag}`).single();
+  assert.ok(Math.abs(Number(data.taux) - Number(fx.rate)) < 0.002, `taux appliqué ${data.taux} ≈ taux réel ${fx.rate}`);
+});
+
 } catch (e) { results.push(['❌', 'Erreur fatale', 0, e.message]); console.error(e); } finally {
 // ---------- nettoyage (toujours) ----------
 if (browser) await browser.close().catch(() => {});
@@ -262,6 +320,8 @@ for (const u of [T1, T2]) {
   await sql(env, `delete from public.change_log where user_id = '${u.id}'; delete from public.restore_points where user_id = '${u.id}'; delete from public.notif_log where user_id = '${u.id}';`);
   await admin.auth.admin.deleteUser(u.id);
 }
+const leftovers = await sql(env, "select id from auth.users where email like 'e2e-signup-%@cockpit.test'");
+for (const x of leftovers) await sql(env, `delete from public.change_log where user_id = '${x.id}'; delete from auth.users where id = '${x.id}'`);
 const left = await sql(env, `select count(*)::int n from public.tx where user_id in ('${T1.id}', '${T2.id}')`);
 console.log(`Nettoyage : comptes de test supprimés (${left[0].n} ligne restante)`);
 }

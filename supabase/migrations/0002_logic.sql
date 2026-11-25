@@ -41,6 +41,12 @@ language sql stable set search_path = public, pg_temp as $$
   select coalesce((select public.ck_num(valeur) from public.params where user_id = p_uid and cle = p_key and deleted_at is null), p_def)
 $$;
 
+-- Taux réel MAD -> EUR à une date (dernier taux connu dans les 10 jours précédents), sinon null
+create or replace function public.ck_fx(p_date date) returns numeric
+language sql stable set search_path = public, pg_temp as $$
+  select rate from public.fx_rates where pair = 'MAD/EUR' and date <= p_date and date > p_date - 10 order by date desc limit 1
+$$;
+
 create or replace function public.ck_get(p_uid uuid, p_tbl text, p_id uuid) returns jsonb
 language plpgsql stable set search_path = public, pg_temp as $$
 declare v jsonb;
@@ -95,7 +101,7 @@ begin
     m := round(m, 2);
     tx := public.ck_num(j ->> 'taux');
     if dev = 'EUR' then tx := 1;
-    elsif tx is null or tx <= 0 or tx = 1 then tx := public.ck_param(p_uid, 'taux_mad_eur', 0.093); end if;
+    elsif tx is null or tx <= 0 or tx = 1 then tx := coalesce(public.ck_fx(d), public.ck_param(p_uid, 'taux_mad_eur', 0.093)); end if;
     nat := nullif(j ->> 'nature', '');
     if nat is null then
       select c.nature into nat from public.categories c
@@ -217,6 +223,15 @@ begin
         perform public.ck_err(format('récurrent « %s » : %s', r.libelle, sqlerrm));
       end;
     end loop;
+  elsif p_key = 'recompute_rates' and p_item ->> 'mode' = 'historique' then
+    -- taux réel du jour de chaque opération (quand il est connu), sinon le taux actuel
+    v_rate := public.ck_param(p_uid, 'taux_mad_eur', 0.093);
+    update public.tx t set taux = x.rate, montant_eur = round(t.montant * x.rate, 2)
+      from (select id, coalesce(public.ck_fx(date), v_rate) rate from public.tx where user_id = p_uid and devise = 'MAD' and deleted_at is null) x
+     where t.id = x.id and (t.taux <> x.rate or t.montant_eur <> round(t.montant * x.rate, 2));
+    update public.snapshots s set solde_eur = round(s.solde * x.rate, 2)
+      from (select id, coalesce(public.ck_fx(date), v_rate) rate from public.snapshots where user_id = p_uid and devise = 'MAD' and deleted_at is null) x
+     where s.id = x.id and s.solde_eur <> round(s.solde * x.rate, 2);
   elsif p_key = 'recompute_rates' then
     v_rate := public.ck_param(p_uid, 'taux_mad_eur', 0.093);
     update public.tx set taux = v_rate, montant_eur = round(montant * v_rate, 2)

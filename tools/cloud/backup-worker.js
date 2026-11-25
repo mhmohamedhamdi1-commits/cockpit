@@ -1,8 +1,8 @@
 // Cloudflare Worker « cockpit-backup » : sauvegarde externe quotidienne, chiffrée, hors de Supabase.
 // - chaque nuit : export complet (fonction ck_export) -> chiffrement AES-256-GCM -> Workers KV
 //   (journalières gardées 90 jours, 1 par mois sans limite). L'appel quotidien garde aussi le projet Supabase actif.
-// - GET /list et /get?key=… : réservés au propriétaire (jeton Supabase valide, MFA validée, bon identifiant)
-// Secrets : SUPABASE_SERVICE_KEY, BACKUP_KEY (32 octets base64), OWNER_ID ; variables : SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, APP_ORIGIN
+// - GET /list et /get?key=… : chaque utilisateur (jeton valide + MFA) n'accède qu'à SES sauvegardes
+// Secrets : SUPABASE_SERVICE_KEY, BACKUP_KEY (32 octets base64), RUN_SECRET ; variables : SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, APP_ORIGIN
 
 const MAGIC = new TextEncoder().encode('CKB1');
 
@@ -24,33 +24,51 @@ async function decrypt(env, buf) {
   return new TextDecoder().decode(pt);
 }
 
-async function runBackup(env) {
-  const r = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/ck_export`, {
-    method: 'POST',
-    headers: { apikey: env.SUPABASE_SERVICE_KEY, ...(env.SUPABASE_SERVICE_KEY.startsWith('ey') ? { Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}` } : {}), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ p_uid: env.OWNER_ID }),
-  });
-  if (!r.ok) throw new Error(`export ${r.status} ${await r.text()}`);
-  const at = new Date().toISOString();
-  const text = `{"exported_at":"${at}","tables":${await r.text()}}`;
-  const blob = await encrypt(env, text);
-  const day = at.slice(0, 10);
-  const meta = { size: text.length, at };
-  await env.BACKUPS.put(`daily/${day}`, blob, { expirationTtl: 90 * 86400, metadata: meta });
-  if (day.endsWith('-01')) await env.BACKUPS.put(`monthly/${day.slice(0, 7)}`, blob, { metadata: meta });
-  return meta;
+const svc = (env) => ({ apikey: env.SUPABASE_SERVICE_KEY, ...(env.SUPABASE_SERVICE_KEY.startsWith('ey') ? { Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}` } : {}), 'Content-Type': 'application/json' });
+async function rpc(env, fn, body) {
+  const r = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/${fn}`, { method: 'POST', headers: svc(env), body: JSON.stringify(body || {}) });
+  if (!r.ok) throw new Error(`${fn} ${r.status} ${await r.text()}`);
+  return r.text();
 }
 
-async function owner(req, env) {
+// Une sauvegarde par compte : clé u/<id>/daily/<date> (90 jours) et u/<id>/monthly/<mois> (sans limite)
+async function runBackup(env) {
+  const users = JSON.parse(await rpc(env, 'ck_backup_users'));
+  const at = new Date().toISOString(), day = at.slice(0, 10);
+  const done = [];
+  for (const uid of users) {
+    const text = `{"exported_at":"${at}","tables":${await rpc(env, 'ck_export', { p_uid: uid })}}`;
+    const blob = await encrypt(env, text);
+    const meta = { size: text.length, at };
+    await env.BACKUPS.put(`u/${uid}/daily/${day}`, blob, { expirationTtl: 90 * 86400, metadata: meta });
+    if (day.endsWith('-01')) await env.BACKUPS.put(`u/${uid}/monthly/${day.slice(0, 7)}`, blob, { metadata: meta });
+    done.push(meta.size);
+  }
+  // comptes supprimés : effacer leurs sauvegardes (droit à l'effacement)
+  const live = new Set(users);
+  let cursor, purged = 0;
+  do {
+    const l = await env.BACKUPS.list({ cursor });
+    for (const k of l.keys) {
+      const m = k.name.match(/^u\/([0-9a-f-]{36})\//);
+      if ((m && !live.has(m[1])) || !k.name.startsWith('u/')) { await env.BACKUPS.delete(k.name); purged++; }
+    }
+    cursor = l.list_complete ? null : l.cursor;
+  } while (cursor);
+  return { at, comptes: done.length, octets: done.reduce((a, b) => a + b, 0), purges: purged };
+}
+
+// Renvoie l'identifiant de l'utilisateur si son jeton Supabase est valide ET de niveau MFA, sinon null
+async function userOf(req, env) {
   const jwt = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
-  if (!jwt) return false;
+  if (!jwt) return null;
   let claims;
-  try { claims = JSON.parse(atob(jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); } catch { return false; }
-  if (claims.aal !== 'aal2' || claims.sub !== env.OWNER_ID) return false;
+  try { claims = JSON.parse(atob(jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); } catch { return null; }
+  if (claims.aal !== 'aal2') return null;
   const r = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${jwt}` } });
-  if (!r.ok) return false;
+  if (!r.ok) return null;
   const u = await r.json();
-  return u.id === env.OWNER_ID;
+  return u.id && u.id === claims.sub ? u.id : null;
 }
 
 export default {
@@ -64,22 +82,22 @@ export default {
     const json = (b, s = 200) => new Response(typeof b === 'string' ? b : JSON.stringify(b), { status: s, headers: { ...cors, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
     // déclenchement manuel par l'administrateur (test / sauvegarde immédiate)
     if (url.pathname === '/run' && env.RUN_SECRET && req.headers.get('x-run-secret') === env.RUN_SECRET) return json(await runBackup(env));
-    if (!(await owner(req, env))) return json({ error: 'non autorisé' }, 401);
+    const uid = await userOf(req, env);
+    if (!uid) return json({ error: 'non autorisé' }, 401);
+    const prefix = `u/${uid}/`;
     if (url.pathname === '/list') {
       const items = [];
-      for (const prefix of ['daily/', 'monthly/']) {
-        const l = await env.BACKUPS.list({ prefix });
-        for (const k of l.keys) items.push({ key: k.name, size: (k.metadata && k.metadata.size) || 0, at: k.metadata && k.metadata.at });
-      }
-      items.sort((a, b) => (a.key < b.key ? 1 : -1));
+      const l = await env.BACKUPS.list({ prefix });
+      for (const k of l.keys) items.push({ key: k.name.slice(prefix.length), size: (k.metadata && k.metadata.size) || 0, at: k.metadata && k.metadata.at });
+      items.sort((a, b) => ((a.at || a.key) < (b.at || b.key) ? 1 : -1));
       return json({ items });
     }
     if (url.pathname === '/get') {
-      const buf = await env.BACKUPS.get(url.searchParams.get('key') || '', 'arrayBuffer');
+      const key = (url.searchParams.get('key') || '').replace(/[^a-z0-9/-]/gi, '');
+      const buf = await env.BACKUPS.get(prefix + key, 'arrayBuffer');   // jamais hors de l'espace de l'utilisateur
       if (!buf) return json({ error: 'introuvable' }, 404);
       return json(await decrypt(env, buf));
     }
-    if (url.pathname === '/run' && req.method === 'GET') return json(await runBackup(env));
     return json({ error: 'route inconnue' }, 404);
   },
 };

@@ -142,7 +142,7 @@ export async function downloadBackup(key) {
   const b = await backupFetch('/get?key=' + encodeURIComponent(key));
   const ui = {};
   for (const t of TABLES) ui[t.key] = (b.tables[t.key] || []).filter((r) => !r.deleted_at).map((r) => fromDb(t, r));
-  await exportExcel(ui, `Cockpit_Sauvegarde_${key.replace(/[^0-9-]/g, '')}.xlsx`);
+  await exportExcel(ui, `Cockpit_Sauvegarde_${key.split('/').pop()}.xlsx`);
 }
 export async function restoreBackup(key) {
   if (!(await confirmBox(`Remplacer toutes les données par la sauvegarde « ${key} » ? Un point de restauration est créé avant.`, { ok: 'Restaurer', danger: true }))) return;

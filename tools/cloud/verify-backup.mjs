@@ -14,7 +14,7 @@ console.log('Accès sans connexion :', anon.status, anon.status === 401 ? '(refu
 const ns = (await cf(env, 'GET', `/accounts/${acc}/storage/kv/namespaces?per_page=100`)).find((n) => n.title === 'cockpit-backups');
 const keys = await cf(env, 'GET', `/accounts/${acc}/storage/kv/namespaces/${ns.id}/keys`);
 console.log('Sauvegardes présentes :', keys.map((k) => k.name).join(', '));
-const last = keys.map((k) => k.name).filter((k) => k.startsWith('daily/')).sort().pop();
+const last = keys.map((k) => k.name).filter((k) => k.startsWith(`u/${env.COCKPIT_OWNER_ID}/daily/`)).sort().pop();
 const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${acc}/storage/kv/namespaces/${ns.id}/values/${encodeURIComponent(last)}`, { headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}` } });
 const buf = Buffer.from(await r.arrayBuffer());
 if (buf.subarray(0, 4).toString() !== 'CKB1') throw new Error('format inattendu');

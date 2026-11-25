@@ -1,7 +1,7 @@
 import { h, icon, clear, monthLabel, monthLong, addMonths, monthNames, monthShort } from './util.js';
 import { S, load, loadPrefs, savePrefs, subscribe, emit, reload, setPeriod, setActivity, startSync, flush, wipeLocal, stopSync } from './state.js';
 import { segmented, popover, toast, modal } from './ui.js';
-import { ensureAuth, watchRecovery } from './auth.js';
+import { ensureAuth, watchRecovery, logout } from './auth.js';
 import { sb } from './supa.js';
 import { computeAlerts } from './core.js';
 import { exportExcel } from './data.js';
@@ -105,7 +105,8 @@ function openMore() {
   const m = modal({ title: 'Menu', body: h('div', { class: 'morelist' }, items.map(([k, r]) => {
     const badge = r.v.badge ? r.v.badge() : 0;
     return h('a', { href: '#/' + k, class: S.route === k ? 'on' : '', onClick: () => m.close() }, icon(r.ic, 20), r.label, badge ? h('span', { class: 'count' }, badge) : null, icon('right', 16));
-  }), h('div', { class: 'syncline' }, syncText())) });
+  }), h('button', { class: 'morelogout', type: 'button', onClick: () => { m.close(); logout(); } }, icon('user', 20), h('span', null, 'Se déconnecter', h('small', null, S.user ? S.user.email : ''))),
+  h('div', { class: 'syncline' }, syncText())) });
 }
 function renderTabbar() {
   clear(refs.tabbar);
@@ -149,7 +150,8 @@ function renderNav() {
     h('div', { class: 'row' },
       h('button', { class: 'btn sm', title: 'Synchroniser maintenant', onClick: () => flush().then(() => toast('Synchronisé')) }, icon('repeat', 15)),
       h('button', { class: 'btn sm', title: 'Exporter toutes les données dans un fichier Excel', onClick: () => exportExcel() }, icon('sheet', 15), 'Excel'),
-      h('button', { class: 'btn sm', title: S.theme === 'dark' ? 'Mode clair' : 'Mode sombre', onClick: () => { S.theme = (document.documentElement.dataset.theme === 'dark') ? 'light' : 'dark'; savePrefs(); applyTheme(); renderNav(); } }, icon(document.documentElement.dataset.theme === 'dark' ? 'sun' : 'moon', 15))));
+      h('button', { class: 'btn sm', title: S.theme === 'dark' ? 'Mode clair' : 'Mode sombre', onClick: () => { S.theme = (document.documentElement.dataset.theme === 'dark') ? 'light' : 'dark'; savePrefs(); applyTheme(); renderNav(); } }, icon(document.documentElement.dataset.theme === 'dark' ? 'sun' : 'moon', 15))),
+    h('div', { class: 'userbox' }, icon('user', 16), h('span', { title: S.user ? S.user.email : '' }, S.user ? S.user.email : ''), h('button', { class: 'btn sm', onClick: logout, title: 'Se déconnecter' }, 'Déconnexion')));
   renderTabbar();
 }
 

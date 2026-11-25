@@ -69,7 +69,7 @@ const FREQS = ['Une fois', 'Mensuel', 'Trimestriel', 'Annuel'];
 const CATS = ['Fiscal', 'Freelance', 'Immobilier', 'Perso'];
 function openRappel(r = {}) {
   const editing = !!r.id;
-  const titre = h('input', { type: 'text', value: r.titre || '', placeholder: 'ex. Déclaration URSSAF, CFE, taxe Amal 1…' });
+  const titre = h('input', { type: 'text', value: r.titre || '', placeholder: 'ex. Déclaration URSSAF, CFE, taxe foncière…' });
   const cat = select(CATS, r.categorie || 'Fiscal');
   const freq = select(FREQS, r.frequence || 'Une fois');
   const date = h('input', { type: 'date', value: r.date || S.today });
@@ -98,5 +98,5 @@ function rappelsCard() {
           h('td', null, r.titre, h('span', { class: 'sub' }, [r.categorie, r.avance ? `prévenu ${r.avance} j avant` : '', r.note].filter(Boolean).join(' · '))),
           h('td', null, r.frequence), h('td', null, d ? fmtDate(d) : h('span', { class: 'muted' }, 'passée')),
           h('td', null, r.actif === 'Non' ? pill('mute', 'En pause') : days == null ? pill('mute', 'Terminé') : days <= 7 ? pill('warn', days === 0 ? 'Aujourd’hui' : `Dans ${days} j`) : pill('info', `Dans ${days} j`))); })))
-      : empty('Aucun rappel', 'Ajoute tes échéances : déclaration URSSAF, CFE, impôt sur le revenu, taxes Amal 1…'));
+      : empty('Aucun rappel', 'Ajoute tes échéances : déclaration URSSAF, CFE, impôt sur le revenu, taxe foncière…'));
 }

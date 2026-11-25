@@ -75,8 +75,8 @@ function loginStep(mode = 'login') {
     const links = h('div', { class: 'auth-links' },
       mode === 'login' ? h('button', { class: 'btn ghost sm', type: 'button', onClick: () => forgot(email.value) }, 'Mot de passe oublié') : null,
       CONFIG.allowSignup ? h('button', { class: 'btn ghost sm', type: 'button', onClick: () => loginStep(mode === 'login' ? 'signup' : 'login').then(resolve) },
-        mode === 'login' ? 'Première utilisation : créer mon compte' : 'J’ai déjà un compte') : null);
-    screen(mode === 'signup' ? 'Créer ton compte' : 'Connexion', mode === 'signup' ? 'Ce compte sera le seul autorisé à accéder à tes données.' : 'Tes données financières sont protégées : mot de passe + code de sécurité.', [form, links]);
+        mode === 'login' ? 'Pas encore de compte ? Créer un compte' : 'J’ai déjà un compte : me connecter') : null);
+    screen(mode === 'signup' ? 'Créer ton compte' : 'Connexion', mode === 'signup' ? 'Ton espace est privé : personne d’autre (y compris les autres utilisateurs) ne peut voir tes données.' : 'Tes données financières sont protégées : mot de passe + code de sécurité.', [form, links]);
     setTimeout(() => email.focus(), 50);
   });
 }
@@ -196,3 +196,12 @@ export async function changePassword(pw) {
   if (error) throw new Error(fr(error));
 }
 export { fr as authError };
+
+// Déconnexion (accessible depuis le menu latéral, le menu « Plus » et les Paramètres)
+export async function logout() {
+  const { confirmBox } = await import('./ui.js');
+  const { flush } = await import('./state.js');
+  if (!(await confirmBox('Se déconnecter de cet appareil ? La copie locale des données y sera effacée (elles restent en sécurité dans ton compte).', { ok: 'Se déconnecter', title: 'Déconnexion' }))) return;
+  await flush().catch(() => {});
+  await sb.auth.signOut();
+}

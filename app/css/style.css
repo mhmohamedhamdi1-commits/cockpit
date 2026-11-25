@@ -449,3 +449,10 @@ input.otp { font: 700 26px/1 var(--mono); letter-spacing: .35em; text-align: cen
 }
 @keyframes sheet { from { transform: translateY(40px); opacity: .4; } }
 @media (hover: none) { .tbl tbody tr:hover { background: none; } .btn:hover { box-shadow: none; } }
+
+.userbox { display: flex; align-items: center; gap: 7px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--ink-2); }
+.userbox span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.morelogout { display: flex; align-items: center; gap: 14px; padding: 15px 4px; border: 0; border-bottom: 1px solid var(--line-2); background: none; color: var(--crit-ink); font-weight: 650; font-size: 16px; text-align: left; width: 100%; }
+.morelogout small { display: block; color: var(--ink-3); font-weight: 450; font-size: 12.5px; }
+.fxbox { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px 14px; margin-top: 12px; }
+.fxbox b { font-size: 16px; }

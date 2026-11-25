@@ -39,6 +39,7 @@ before(async () => {
   await db.exec(STUB);
   await db.exec(readFileSync(new URL('../supabase/migrations/0001_schema.sql', import.meta.url), 'utf8'));
   await db.exec(readFileSync(new URL('../supabase/migrations/0002_logic.sql', import.meta.url), 'utf8'));
+  await db.exec(readFileSync(new URL('../supabase/migrations/0004_accounts.sql', import.meta.url), 'utf8'));
   await as(A);
   await ops([
     { e: 'param', item: { cle: 'taux_mad_eur', valeur: '0.1' } },
@@ -251,4 +252,52 @@ test('restauration complète : remplacement, suppression logique, instantané pr
   await as(B);
   await rejects(q('select public.restore_point($1)', [pts[0].id]), 'CK422');
   assert.equal((await q('select count(*)::int n from restore_points'))[0].n, 0);
+});
+
+test('nouvel inscrit : base de départ créée automatiquement, isolée des autres', async () => {
+  await db.exec('reset role');
+  const C = crypto.randomUUID();
+  await q(`insert into auth.users values ('${C}')`);
+  await as(C);
+  const [c] = await q('select (select count(*)::int from categories) cats, (select count(*)::int from params) params, (select count(*)::int from accounts) accs, (select count(*)::int from tx) tx');
+  assert.equal(c.cats, 71);
+  assert.equal(c.params, 22);
+  assert.equal(c.accs, 2);
+  assert.equal(c.tx, 0, 'aucune donnée d\'un autre compte');
+  assert.equal((await q(`select valeur from params where cle = 'nom'`))[0].valeur, '');
+});
+
+test('taux réel : utilisé à la date de l\'opération, mise à jour automatique, recalcul historique', async () => {
+  await db.exec('reset role');
+  await q(`select public.ck_fx_store('2026-11-20', 0.0915, 'test'), public.ck_fx_store('2026-11-24', 0.0912, 'test')`);
+  await as(A);
+  assert.equal((await q(`select valeur from params where cle = 'taux_mad_eur'`))[0].valeur, '0.0912', 'paramètre mis à jour automatiquement');
+  const id = crypto.randomUUID();
+  await ops([{ e: 'tx', item: { id, date: '2026-11-21', activite: 'Immobilier', sens: 'Revenu', categorie: 'Loyer', montant: 1000, devise: 'MAD' } }]);
+  const [t] = await q('select taux, montant_eur from tx where id = $1', [id]);
+  assert.equal(Number(t.taux), 0.0915, 'taux du jour de l\'opération');
+  assert.equal(Number(t.montant_eur), 91.5);
+  const old = crypto.randomUUID();
+  await ops([{ e: 'tx', item: { id: old, date: '2020-01-01', activite: 'Immobilier', sens: 'Revenu', categorie: 'Loyer', montant: 1000, devise: 'MAD', taux: 0.093 } }]);
+  await ops([{ e: 'action', key: 'recompute_rates', item: { mode: 'historique' } }]);
+  assert.equal(Number((await q('select taux from tx where id = $1', [old]))[0].taux), 0.0912, 'sans taux connu à cette date : taux actuel');
+  await ops([{ e: 'param', item: { cle: 'taux_auto', valeur: 'Non' } }]);
+  await db.exec('reset role');
+  await q(`select public.ck_fx_store('2026-11-25', 0.0999, 'test')`);
+  await as(A);
+  assert.equal((await q(`select valeur from params where cle = 'taux_mad_eur'`))[0].valeur, '0.0912', 'suivi automatique désactivé : inchangé');
+});
+
+test('suppression de compte : tout est effacé, rien chez les autres', async () => {
+  await db.exec('reset role');
+  const D = crypto.randomUUID();
+  await q(`insert into auth.users values ('${D}')`);
+  await as(D);
+  await ops([{ e: 'tx', item: { date: '2026-11-01', activite: 'Perso', sens: 'Dépense', categorie: 'Courses', montant: 3 } }]);
+  await rejects(q(`select public.delete_my_account('oui')`), 'CK422');
+  await q(`select public.delete_my_account('SUPPRIMER')`);
+  await db.exec('reset role');
+  const [r] = await q(`select (select count(*)::int from auth.users where id = '${D}') u, (select count(*)::int from tx where user_id = '${D}') tx, (select count(*)::int from change_log where user_id = '${D}') log, (select count(*)::int from tx where user_id = '${A}') a`);
+  assert.deepEqual([r.u, r.tx, r.log], [0, 0, 0]);
+  assert.ok(r.a > 0, 'données des autres comptes intactes');
 });
