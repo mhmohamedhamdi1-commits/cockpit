@@ -187,6 +187,15 @@ Risque de mise en veille Supabase (7 jours sans activité) : très faible — to
 ### Déconnexion
 Bouton « Déconnexion » en bas du menu latéral (PC) et « Se déconnecter » dans le menu « Plus » (iPhone), en plus des Paramètres.
 
+### Projets immobiliers partagés
+- Hiérarchie : **Immobilier › Projet** (ex. « Amal 1 », part 67 %) **› lots › locataires / opérations**. Barre de projets en haut de l'écran Immobilier (« Tous les projets » ou un projet).
+- Nouveau projet : Immobilier › « + Nouveau projet », puis « Ajouter un lot ». Déplacer un lot vers un autre projet déplace ses locataires et ses opérations.
+- **Partager** (lecture seule) : Immobilier › projet › « Partager » › nom affiché + part (%) › « Créer un lien d'invitation » › envoyer le lien (WhatsApp…). Le lien est secret, **valable 14 jours, utilisable une seule fois**. L'invité crée son compte (ou se connecte) puis ouvre le lien.
+- L'invité voit uniquement ce projet (lots, locataires, loyers, charges, opérations), avec **sa** part dans son tableau de bord. Il ne voit ni tes finances perso, ni tes autres projets, et ne peut rien modifier (refusé par la base, pas seulement masqué).
+- Retirer un accès : « Partager » › corbeille : effet immédiat sur tous ses appareils. L'invité peut aussi « Quitter ce projet ».
+- Technique : tables `projets` et `projet_membres`, colonne `projet_id` sur lots / locataires / opérations / récurrents, politique RLS supplémentaire `shared` (membre actif ET ligne appartenant au propriétaire du projet), fonctions `invite_to_projet`, `accept_invitation`, `update_membre`, `remove_membre` ; code d'invitation stocké uniquement sous forme d'empreinte SHA-256.
+- Pourquoi un lien et pas un e-mail : tant que la confirmation d'e-mail n'est pas activée (SMTP), une invitation « par adresse » pourrait être prise par quelqu'un qui s'inscrirait avec cette adresse.
+
 ### Avant d'ouvrir l'application au public
 | À faire | Pourquoi |
 |---|---|
