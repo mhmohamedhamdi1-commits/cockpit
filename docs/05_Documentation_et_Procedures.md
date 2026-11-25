@@ -166,7 +166,38 @@ Options futures, seulement si tu le décides : nom de domaine (~10-15 €/an), A
 
 Risque de mise en veille Supabase (7 jours sans activité) : très faible — ton usage, la tâche de rappels horaire et la sauvegarde nocturne interrogent la base chaque jour.
 
-## 7. Points d'attention
+## 7. Évolutions du 25/11/2026 (après mise en service)
+
+### Comptes multiples
+- Inscription ouverte : « Pas encore de compte ? Créer un compte » sur l'écran de connexion. Code de sécurité (MFA) obligatoire pour tous.
+- Chaque nouvel inscrit reçoit automatiquement sa propre base de départ (71 catégories, paramètres, 2 comptes) : déclencheur `ck_on_signup` sur `auth.users`.
+- Isolation : RLS par `user_id` (testée : un autre compte ne voit ni ne modifie rien, même avec un identifiant de ligne).
+- Suppression de compte (droit à l'effacement) : Paramètres › Compte › « Supprimer mon compte » (`delete_my_account`) — efface toutes les tables, l'historique, les points de restauration ; les sauvegardes externes du compte sont purgées à la sauvegarde suivante.
+- Sauvegarde externe : une par compte (`u/<id>/daily/<date>`), chaque utilisateur ne peut lister / télécharger que les siennes.
+- Fermer / rouvrir les inscriptions : `node tools/cloud/deploy.mjs lock` / `unlock`.
+
+### Taux de change réel MAD → EUR
+- Chaque jour (tâche horaire, une fois par jour) : taux du marché via open.er-api.com (secours : fawazahmed0/currency-api), garde-fou 0,05–0,2, stocké dans `fx_rates`.
+- Historique quotidien chargé depuis le 02/03/2024 (`tools/cloud/fx-backfill.mjs`).
+- Nouvelle opération en MAD : taux réel **de la date de l'opération** (sinon taux actuel).
+- Paramètre `taux_mad_eur` mis à jour automatiquement (désactivable : Paramètres › Général › « Mise à jour automatique »).
+- Historique existant : inchangé tant que tu ne cliques pas « Taux réel à la date de chaque opération » (annulable via l'historique).
+- Ce sont des taux de marché (milieu de fourchette), pas le taux appliqué par ta banque ou ton service de transfert.
+
+### Déconnexion
+Bouton « Déconnexion » en bas du menu latéral (PC) et « Se déconnecter » dans le menu « Plus » (iPhone), en plus des Paramètres.
+
+### Avant d'ouvrir l'application au public
+| À faire | Pourquoi |
+|---|---|
+| **SMTP personnalisé** (Resend, Brevo, Postmark… offres gratuites) + domaine d'envoi | Le service e-mail par défaut de Supabase n'envoie qu'aux membres de ton équipe Supabase (2 e-mails/heure) : « mot de passe oublié » ne fonctionnerait pas pour les autres utilisateurs |
+| **CAPTCHA** à l'inscription (Cloudflare Turnstile, gratuit) | Inscriptions automatisées par des robots |
+| Réactiver la **confirmation d'e-mail** (une fois le SMTP en place) | Éviter les comptes créés avec l'adresse de quelqu'un d'autre |
+| **CGU, politique de confidentialité, mentions légales**, registre RGPD, contrat de sous-traitance Supabase/Cloudflare | Obligations légales dès qu'il y a d'autres utilisateurs |
+| **Nom de domaine** (ex. cockpit-finances.fr) | Confiance, e-mails, App Store |
+| Passer Supabase en **Pro** (25 $/mois) dès les premiers clients payants | Sauvegardes natives, pas de mise en veille, support |
+
+## 8. Points d'attention
 - **Jetons d'accès** transmis dans la conversation : à révoquer puis recréer (Supabase › Account › Access Tokens ; Cloudflare › My Profile › API Tokens), et mettre les nouveaux dans `.env`.
 - **BACKUP_KEY** (dans `.env`) : recopie-la dans ton gestionnaire de mots de passe. Sans elle, les sauvegardes externes sont indéchiffrables (l'appli, elle, continue de fonctionner).
 - **PC LVMH** : le proxy Zscaler inspecte le trafic chiffré. Pour tes données financières, privilégie l'iPhone ou un ordinateur personnel.
