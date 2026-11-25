@@ -202,10 +202,14 @@ function updateBadge() {
 let swReloading = false;
 function registerSW() {
   if (!('serviceWorker' in navigator) || location.hostname === 'localhost' && !location.search.includes('sw')) return;
+  const hadController = !!navigator.serviceWorker.controller;   // 1re visite : pas de rechargement
   navigator.serviceWorker.register('/sw.js').catch(() => {});
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (swReloading) return; swReloading = true;
-    if (!document.querySelector('.overlay')) location.reload();
+    if (!hadController || swReloading) return;
+    swReloading = true;
+    // nouvelle version : recharger seulement quand aucune saisie n'est en cours
+    const tryReload = () => { if (document.querySelector('.app') && !document.querySelector('.overlay')) location.reload(); else setTimeout(tryReload, 5000); };
+    tryReload();
   });
 }
 
