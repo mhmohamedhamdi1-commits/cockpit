@@ -17,6 +17,7 @@ export const S = {
   route: 'dashboard', args: {},
   sync: { online: navigator.onLine, pending: 0, lastSync: null, syncing: false, error: '' },
   user: null,
+  memberships: [],   // projets partagés : où je suis invité (lecteur) et mes invités
 };
 const listeners = new Set();
 export const subscribe = (f) => { listeners.add(f); return () => listeners.delete(f); };
@@ -28,13 +29,14 @@ export function loadPrefs() {
   try { Object.assign(S, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { /* ignore */ }
 }
 export function savePrefs() {
-  localStorage.setItem(KEY, JSON.stringify({ period: S.period, activity: S.activity, immoView: S.immoView, theme: S.theme, lastActivity: S.lastActivity }));
+  localStorage.setItem(KEY, JSON.stringify({ period: S.period, activity: S.activity, immoView: S.immoView, theme: S.theme, lastActivity: S.lastActivity, immoProjet: S.immoProjet || '' }));
 }
 
 // ---------- stockage local ----------
 const rows = Object.fromEntries(TABLES.map((t) => [t.key, new Map()]));   // id -> ligne (format interface)
 let outbox = [];          // lots en attente : { id, ops, at }
 let watermark = null;     // updated_at le plus récent reçu du serveur
+let sharedKnown = [];     // projets partagés avec moi déjà chargés
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
 function rebuild() {
@@ -47,7 +49,7 @@ function rebuild() {
 }
 const persist = debounce(() => {
   const dump = {}; for (const t of TABLES) dump[t.key] = [...rows[t.key].values()];
-  idbSet('data', { rows: dump, watermark, user: S.user && S.user.id }).catch(() => {});
+  idbSet('data', { rows: dump, watermark, user: S.user && S.user.id, memberships: S.memberships, sharedKnown }).catch(() => {});
 }, 400);
 const persistOutbox = () => idbSet('outbox', outbox).catch(() => {});
 
@@ -57,13 +59,15 @@ export async function loadCache(userId) {
   if (!c || (userId && c.user && c.user !== userId)) return false;
   for (const t of TABLES) { rows[t.key].clear(); for (const r of c.rows[t.key] || []) rows[t.key].set(r.id, r); }
   watermark = c.watermark;
+  S.memberships = c.memberships || [];
+  sharedKnown = c.sharedKnown || [];
   for (const b of outbox) applyLocal(b);
   rebuild();
   return true;
 }
 export async function wipeLocal() {
   for (const t of TABLES) rows[t.key].clear();
-  outbox = []; watermark = null;
+  outbox = []; watermark = null; sharedKnown = []; S.memberships = [];
   await idbClear().catch(() => {});
 }
 
@@ -80,6 +84,37 @@ async function fetchTable(def, since) {
   }
   return out;
 }
+// Projets partagés : charge entièrement un projet nouvellement accessible, oublie ceux dont l'accès a été retiré
+const SHARED_TABLES = ['projets', 'lots', 'tenants', 'tx', 'recurring'];
+async function syncShared() {
+  const { data, error } = await sb.from('projet_membres').select('id,projet_id,owner_id,owner_email,user_id,label,role,part,status,expires_at,created_at,accepted_at');
+  if (error) throw error;
+  S.memberships = data;
+  const me = S.user && S.user.id;
+  const access = new Set(data.filter((m) => m.user_id === me && m.status === 'actif').map((m) => m.projet_id));
+  for (const pid of access) {
+    if (sharedKnown.includes(pid)) continue;
+    for (const key of SHARED_TABLES) {
+      const def = BY_KEY[key];
+      for (let from = 0; ; from += 1000) {
+        const col = key === 'projets' ? 'id' : 'projet_id';
+        const { data: rws, error: e2 } = await sb.from(key).select('*').eq(col, pid).is('deleted_at', null).order('seq').range(from, from + 999);
+        if (e2) throw e2;
+        for (const r of rws) rows[key].set(r.id, fromDb(def, r));
+        if (rws.length < 1000) break;
+      }
+    }
+  }
+  // accès retiré : retirer de la copie locale les lignes des projets qui ne me sont plus partagés
+  for (const key of SHARED_TABLES) {
+    for (const [id, r] of rows[key]) {
+      const pid = key === 'projets' ? r.id : r.projetId;
+      if (r.uid && me && r.uid !== me && !access.has(pid)) rows[key].delete(id);
+    }
+  }
+  sharedKnown = [...access];
+}
+
 let pulling = null, pullAgain = false;
 export function pull() {
   if (pulling) { pullAgain = true; return pulling; }
@@ -100,6 +135,7 @@ export function pull() {
           }
         });
         watermark = wm;
+        await syncShared();
         for (const b of outbox) applyLocal(b);      // les saisies pas encore envoyées restent visibles
         S.sync.lastSync = new Date().toISOString();
         S.sync.error = '';
@@ -317,11 +353,18 @@ export async function startSync() {
   const kick = debounce(() => { if (!outbox.length) pull().then(emit).catch(() => {}); else flush(); }, 500);
   channel = sb.channel('cockpit-db');
   for (const t of TABLES) channel.on('postgres_changes', { event: '*', schema: 'public', table: t.key }, kick);
-  channel.subscribe((status, err) => { S.sync.realtime = status; if (status !== 'SUBSCRIBED') console.warn('temps réel :', status, err ? err.message : ''); });
+  channel.on('postgres_changes', { event: '*', schema: 'public', table: 'projet_membres' }, kick);
+  channel.subscribe((status, err) => {
+    S.sync.realtime = status;
+    if (status === 'SUBSCRIBED') {
+      // le serveur ignore les premiers événements quelques secondes après l'abonnement : rattrapage
+      setTimeout(kick, 4000); setTimeout(kick, 10000);
+    } else console.warn('temps réel :', status, err ? err.message : '');
+  });
   window.addEventListener('online', () => { S.sync.online = true; emit(); flush(); });
   window.addEventListener('offline', () => { S.sync.online = false; emit(); });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { S.today = today(); flush(); } });
-  setInterval(() => { if (document.visibilityState === 'visible' && navigator.onLine) flush(); }, 60000);
+  setInterval(() => { if (document.visibilityState === 'visible' && navigator.onLine) flush(); }, 30000);
 }
 export async function stopSync() { if (channel) await sb.removeChannel(channel).catch(() => {}); }
 
@@ -352,3 +395,19 @@ export const todayMonth = () => S.today.slice(0, 7);
 export const prevMonthOfToday = () => addMonths(todayMonth(), -1);
 // Compatibilité : anciens écrans qui appelaient post('/api/...')
 export async function post(path) { throw new Error('Action indisponible dans la version cloud : ' + path); }
+
+// ---------- Projets ----------
+export const isMine = (r) => !r || !r.uid || !S.user || r.uid === S.user.id;
+export const projetsVisibles = () => [...(S.data.projets || [])].sort((a, b) => (isMine(b) - isMine(a)) || a.nom.localeCompare(b.nom));
+export function membershipOf(projetId) {
+  return S.memberships.find((m) => m.projet_id === projetId && m.user_id === (S.user && S.user.id) && m.status === 'actif');
+}
+// Ma part d'un projet : la part du propriétaire si c'est le mien, sinon celle fixée dans mon invitation
+export function partOf(projetId) {
+  if (!projetId) return S.P.part;
+  const p = (S.data.projets || []).find((x) => x.id === projetId);
+  if (p && isMine(p)) return p.part;
+  const m = membershipOf(projetId);
+  return m ? Number(m.part) : (p ? p.part : S.P.part);
+}
+export const projetOfLot = (lotNom) => { const l = S.data.lots.find((x) => x.nom === lotNom && isMine(x)) || S.data.lots.find((x) => x.nom === lotNom); return l ? l.projetId : ''; };

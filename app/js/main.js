@@ -183,7 +183,20 @@ function renderView() {
 }
 function renderAll() { renderNav(); renderTop(); renderView(); document.title = `${ROUTES[S.route].label} — Cockpit`; updateBadge(); }
 
+async function acceptInvitation(code) {
+  history.replaceState(null, '', '#/immo');
+  const { sb: client } = await import('./supa.js');
+  const { data, error } = await client.rpc('accept_invitation', { p_code: code });
+  if (error) { toast('Invitation : ' + error.message, 'error'); return; }
+  const { pull } = await import('./state.js');
+  await pull().catch(() => {});
+  S.immoProjet = data.projet_id; savePrefs(); emit();
+  toast(`Tu as maintenant accès au projet « ${data.projet} » (lecture seule)`);
+}
+
 function route() {
+  const [k0, qs0] = (location.hash || '#/dashboard').replace('#/', '').split('?');
+  if (k0 === 'invitation') { const code = new URLSearchParams(qs0 || '').get('i'); if (code) { acceptInvitation(code); return; } }
   const [k, qs] = (location.hash || '#/dashboard').replace('#/', '').split('?');
   S.route = ROUTES[k] ? k : 'dashboard';
   S.args = Object.fromEntries(new URLSearchParams(qs || ''));

@@ -1,5 +1,5 @@
 import { h, clear, icon, eur, parseAmount, norm, addDays, fmtDate } from './util.js';
-import { S, ops, upsert, del, catsFor, savePrefs } from './state.js';
+import { S, ops, upsert, del, catsFor, savePrefs, isMine, projetOfLot } from './state.js';
 import { modal, segmented, field, select, confirmBox, toast } from './ui.js';
 import { activeTenants } from './calc.js';
 
@@ -29,6 +29,7 @@ function frequentCats(act, sens) {
 
 export function openTxForm(initial = {}, { onSaved } = {}) {
   const editing = !!initial.id;
+  const readOnly = editing && !isMine(initial);
   const f = {
     id: initial.id || 0,
     sens: initial.sens || 'Dépense',
@@ -41,6 +42,7 @@ export function openTxForm(initial = {}, { onSaved } = {}) {
     tiers: initial.tiers || '', lot: initial.lot || '', detail: initial.detail || '',
     nature: initial.nature || '', note: initial.note || '', periode: initial.periode || '', ref: initial.ref || '',
     taux: initial.taux || 0,
+    projetId: initial.projetId || (S.activity === 'Immobilier' && S.immoProjet) || '',
   };
   let natureTouched = !!initial.nature;
   let deviseTouched = !!initial.devise;
@@ -94,8 +96,13 @@ export function openTxForm(initial = {}, { onSaved } = {}) {
   function renderExtras() {
     clear(extras);
     if (f.activite === 'Immobilier') {
-      const lots = [{ value: '', label: '— Aucun —' }, ...S.lots.map((l) => ({ value: l.nom, label: l.nom }))];
-      const lotSel = select(lots, f.lot);
+      const projs = (S.data.projets || []).filter((p) => isMine(p) || p.id === f.projetId);
+      if (!f.projetId && f.lot) f.projetId = projetOfLot(f.lot);
+      if (!f.projetId && projs.length === 1) f.projetId = projs[0].id;
+      const projSel = select([{ value: '', label: '— Sans projet —' }, ...projs.map((p) => ({ value: p.id, label: p.nom }))], f.projetId);
+      const lotOpts = () => [{ value: '', label: '— Aucun —' }, ...S.lots.filter((l) => (isMine(l) || l.nom === f.lot) && (!f.projetId || l.projetId === f.projetId)).map((l) => ({ value: l.nom, label: l.nom }))];
+      const lotSel = select(lotOpts(), f.lot);
+      projSel.addEventListener('change', () => { f.projetId = projSel.value; f.lot = ''; f.tiers = ''; renderExtras(); });
       const tenSel = h('select');
       const fillTen = () => {
         const list = [...new Set([...activeTenants(f.date).filter((t) => t.lot === lotSel.value).map((t) => t.nom)])];
@@ -104,12 +111,12 @@ export function openTxForm(initial = {}, { onSaved } = {}) {
         tenSel.value = f.tiers || (list.length === 1 && f.categorie === 'Loyer' ? list[0] : '');
         f.tiers = tenSel.value;
       };
-      lotSel.addEventListener('change', () => { f.lot = lotSel.value; fillTen(); });
+      lotSel.addEventListener('change', () => { f.lot = lotSel.value; if (f.lot) f.projetId = projetOfLot(f.lot) || f.projetId; fillTen(); });
       tenSel.addEventListener('change', () => { f.tiers = tenSel.value; });
       fillTen();
       const det = h('input', { type: 'text', value: f.detail, placeholder: f.categorie === 'Travaux' ? 'ex. Maçonnerie, Plomberie…' : 'Précision (facultatif)' });
       det.addEventListener('input', () => { f.detail = det.value; });
-      extras.append(field('Lot concerné', lotSel), field('Locataire', tenSel), h('div', { style: { gridColumn: '1 / -1' } }, field('Détail', det)));
+      extras.append(projs.length ? h('div', { style: { gridColumn: '1 / -1' } }, field('Projet', projSel)) : null, field('Lot concerné', lotSel), field('Locataire', tenSel), h('div', { style: { gridColumn: '1 / -1' } }, field('Détail', det)));
     } else if (f.activite === 'Freelance') {
       const cl = [{ value: '', label: '— Aucun —' }, ...S.data.clients.map((c) => ({ value: c.nom, label: c.nom }))];
       const sel = select(cl, f.tiers);
@@ -163,7 +170,7 @@ export function openTxForm(initial = {}, { onSaved } = {}) {
     const item = {
       id: f.id, date: f.date, activite: f.activite, sens: f.sens, categorie: f.categorie, detail: f.detail, libelle: f.libelle || f.categorie,
       montant: v, devise: f.devise, taux: f.taux || 0, nature: natureTouched ? natSel.value : (editing && f.categorie === origCat ? f.nature : ''),
-      tiers: f.tiers, lot: f.lot, periode: editing && f.date.slice(0, 7) === (initial.date || '').slice(0, 7) ? f.periode : '', ref: f.ref, note: f.note,
+      projetId: f.activite === 'Immobilier' ? f.projetId : '', tiers: f.tiers, lot: f.lot, periode: editing && f.date.slice(0, 7) === (initial.date || '').slice(0, 7) ? f.periode : '', ref: f.ref, note: f.note,
       ...(editing ? { version: initial.version, _base: initial } : {}),
     };
     if (initial.periode && !editing) item.periode = initial.periode;
@@ -175,8 +182,8 @@ export function openTxForm(initial = {}, { onSaved } = {}) {
       } else m.close();
     }
   }
-  amountIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save(false); } });
-  const onKey = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); save(false); } };
+  amountIn.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !readOnly) { e.preventDefault(); save(false); } });
+  const onKey = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !readOnly) { e.preventDefault(); save(false); } };
 
   const dateRow = h('div', { class: 'split' }, h('div', { style: { flex: 1 } }, dateIn),
     h('button', { type: 'button', class: 'btn sm', onClick: () => { dateIn.value = S.today; } }, 'Aujourd’hui'),
@@ -198,7 +205,9 @@ export function openTxForm(initial = {}, { onSaved } = {}) {
   if (!editing) footer.push(h('button', { class: 'btn', type: 'button', onClick: () => save(true) }, 'Enregistrer et en ajouter une autre'));
   footer.push(h('button', { class: 'btn primary lg', type: 'button', onClick: () => save(false) }, 'Enregistrer', h('kbd', null, 'Ctrl ↵')));
 
-  const m = modal({ title: editing ? 'Modifier l’opération' : 'Nouvelle opération', width: 700, body, footer, onClose: () => document.removeEventListener('keydown', onKey) });
+  if (readOnly) { footer.length = 0; footer.push(h('span', { class: 'readonly-banner' }, 'Projet partagé : lecture seule'), h('span', { class: 'sp' }), h('button', { class: 'btn', type: 'button', onClick: () => m.close() }, 'Fermer')); }
+  const m = modal({ title: readOnly ? 'Opération (lecture seule)' : editing ? 'Modifier l’opération' : 'Nouvelle opération', width: 700, body, footer, onClose: () => document.removeEventListener('keydown', onKey) });
+  if (readOnly) setTimeout(() => m.bodyEl.querySelectorAll('input,select,textarea,button').forEach((el) => { el.disabled = true; }), 0);
   document.addEventListener('keydown', onKey);
   renderCats(); renderExtras(); conv();
   return m;

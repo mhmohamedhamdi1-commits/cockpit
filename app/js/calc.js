@@ -1,9 +1,9 @@
-import { S } from './state.js';
+import { S, partOf } from './state.js';
 import { addMonths, monthsBetween, sum } from './util.js';
 import * as core from './core.js';
 
 export const inRange = (date, p) => { const m = date.slice(0, 7); return m >= p.from && m <= p.to; };
-export const weight = (t) => (t.activite === 'Immobilier' && S.immoView === 'mine' ? S.P.part : 1);
+export const weight = (t) => (t.activite === 'Immobilier' && S.immoView === 'mine' ? partOf(t.projetId) : 1);
 export const eurOf = (t) => t.montantEur * weight(t);
 
 export function txs({ period = S.period, activity = S.activity } = {}) {

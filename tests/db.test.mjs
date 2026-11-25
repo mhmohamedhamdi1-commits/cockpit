@@ -40,6 +40,7 @@ before(async () => {
   await db.exec(readFileSync(new URL('../supabase/migrations/0001_schema.sql', import.meta.url), 'utf8'));
   await db.exec(readFileSync(new URL('../supabase/migrations/0002_logic.sql', import.meta.url), 'utf8'));
   await db.exec(readFileSync(new URL('../supabase/migrations/0004_accounts.sql', import.meta.url), 'utf8'));
+  await db.exec(readFileSync(new URL('../supabase/migrations/0005_projets.sql', import.meta.url), 'utf8'));
   await as(A);
   await ops([
     { e: 'param', item: { cle: 'taux_mad_eur', valeur: '0.1' } },
@@ -300,4 +301,85 @@ test('suppression de compte : tout est effacé, rien chez les autres', async () 
   const [r] = await q(`select (select count(*)::int from auth.users where id = '${D}') u, (select count(*)::int from tx where user_id = '${D}') tx, (select count(*)::int from change_log where user_id = '${D}') log, (select count(*)::int from tx where user_id = '${A}') a`);
   assert.deepEqual([r.u, r.tx, r.log], [0, 0, 0]);
   assert.ok(r.a > 0, 'données des autres comptes intactes');
+});
+
+test('projets partagés : invitation à usage unique, lecture seule, isolation des autres projets et du perso', async () => {
+  await db.exec('reset role');
+  const O = crypto.randomUUID(), S = crypto.randomUUID(), X = crypto.randomUUID();     // propriétaire, sœur, inconnu
+  await q(`insert into auth.users values ('${O}'), ('${S}'), ('${X}')`);
+  await as(O);
+  const p1 = crypto.randomUUID(), p2 = crypto.randomUUID();
+  await ops([
+    { e: 'projet', item: { id: p1, _insert: true, nom: 'Amal 1', part: 0.67 } },
+    { e: 'projet', item: { id: p2, _insert: true, nom: 'Projet 2', part: 1 } },
+    { e: 'lot', item: { nom: '11. Rue', code: '11', loyer: 2000, projet_id: p1 } },
+    { e: 'lot', item: { nom: '21. Neuf', code: '21', loyer: 3000, projet_id: p2 } },
+    { e: 'tenant', item: { lot: '11. Rue', nom: 'Ali', loyer: 2000 } },                          // projet déduit du lot
+    { e: 'tx', item: { date: '2026-11-05', activite: 'Immobilier', sens: 'Revenu', categorie: 'Loyer', montant: 2000, devise: 'MAD', lot: '11. Rue' } },
+    { e: 'tx', item: { date: '2026-11-06', activite: 'Immobilier', sens: 'Revenu', categorie: 'Loyer', montant: 3000, devise: 'MAD', lot: '21. Neuf' } },
+    { e: 'tx', item: { date: '2026-11-07', activite: 'Perso', sens: 'Dépense', categorie: 'Courses', montant: 50, libelle: 'perso privé' } },
+  ]);
+  assert.equal((await q(`select projet_id from tenants where nom = 'Ali'`))[0].projet_id, p1, 'projet déduit du lot');
+  const [{ r: inv }] = await q('select public.invite_to_projet($1, $2, $3) as r', [p1, 'Sœur', 0.33]);
+  assert.equal(inv.code.length, 64);
+  // avant acceptation : rien
+  await as(S);
+  assert.equal((await q('select count(*)::int n from tx'))[0].n, 0);
+  await rejects(q('select public.accept_invitation($1)', ['mauvais-code']), 'CK422');
+  await q('select public.accept_invitation($1)', [inv.code]);
+  // la sœur voit Amal 1 uniquement
+  assert.deepEqual((await q('select nom from projets order by nom')).map((r) => r.nom), ['Amal 1']);
+  assert.deepEqual((await q('select nom from lots')).map((r) => r.nom), ['11. Rue']);
+  assert.deepEqual((await q('select nom from tenants')).map((r) => r.nom), ['Ali']);
+  const seen = await q('select montant, activite from tx');
+  assert.equal(seen.length, 1, 'uniquement l’opération du projet partagé');
+  assert.equal(Number(seen[0].montant), 2000);
+  const [m] = await q('select part, role, status from projet_membres');
+  assert.deepEqual([Number(m.part), m.role, m.status], [0.33, 'lecteur', 'actif']);
+  // lecture seule : impossible de modifier, supprimer ou injecter des lignes dans le projet
+  const [t] = await q('select id, version from tx');
+  await rejects(ops([{ e: 'tx', item: { id: t.id, version: t.version, montant: 1 } }]), 'CK422');
+  await ops([{ e: 'tx', op: 'delete', id: t.id }]);
+  await rejects(ops([{ e: 'tx', item: { date: '2026-11-08', activite: 'Immobilier', sens: 'Revenu', categorie: 'Loyer', montant: 9, devise: 'MAD', projet_id: p1 } }]), 'CK422');
+  await rejects(ops([{ e: 'lot', item: { nom: 'intrus', projet_id: p1 } }]), 'CK422');
+  await rejects(q('select public.invite_to_projet($1, $2, $3)', [p1, 'x', 0]), 'CK422');
+  await as(O);
+  assert.equal((await q('select deleted_at from tx where id = $1', [t.id]))[0].deleted_at, null, 'rien supprimé');
+  // le code ne sert qu'une fois
+  await as(X);
+  await rejects(q('select public.accept_invitation($1)', [inv.code]), 'CK422');
+  assert.equal((await q('select count(*)::int n from tx'))[0].n, 0);
+  // invitation expirée
+  await as(O);
+  const [{ r: inv2 }] = await q('select public.invite_to_projet($1, $2, $3) as r', [p2, 'X', 0]);
+  await db.exec('reset role');
+  await q(`update projet_membres set expires_at = now() - interval '1 day' where id = '${inv2.id}'`);
+  await as(X);
+  await rejects(q('select public.accept_invitation($1)', [inv2.code]), 'CK422');
+  // révocation : la sœur perd l'accès immédiatement
+  await as(O);
+  const [mem] = await q(`select id from projet_membres where status = 'actif'`);
+  await q('select public.remove_membre($1)', [mem.id]);
+  await as(S);
+  assert.equal((await q('select count(*)::int n from tx'))[0].n, 0);
+  assert.equal((await q('select count(*)::int n from projets'))[0].n, 0);
+  // un projet qui contient des lots ne peut pas être supprimé
+  await as(O);
+  const [pr] = await q('select version from projets where id = $1', [p1]);
+  await rejects(ops([{ e: 'projet', op: 'delete', id: p1, version: pr.version }]), 'CK422');
+});
+
+test('déplacer un lot vers un autre projet entraîne ses locataires et opérations', async () => {
+  await db.exec('reset role');
+  const O = crypto.randomUUID();
+  await q(`insert into auth.users values ('${O}')`);
+  await as(O);
+  const p1 = crypto.randomUUID(), p2 = crypto.randomUUID();
+  await ops([{ e: 'projet', item: { id: p1, nom: 'A' } }, { e: 'projet', item: { id: p2, nom: 'B' } },
+    { e: 'lot', item: { nom: 'L1', projet_id: p1 } }]);
+  await ops([{ e: 'tenant', item: { lot: 'L1', nom: 'T' } }, { e: 'tx', item: { date: '2026-11-01', activite: 'Immobilier', sens: 'Revenu', categorie: 'Loyer', montant: 1, devise: 'MAD', lot: 'L1' } }]);
+  const [l] = await q(`select id, version from lots where nom = 'L1'`);
+  await ops([{ e: 'lot', item: { id: l.id, version: l.version, projet_id: p2 } }]);
+  assert.equal((await q(`select projet_id from tenants where nom = 'T'`))[0].projet_id, p2);
+  assert.equal((await q(`select projet_id from tx where lot = 'L1'`))[0].projet_id, p2);
 });

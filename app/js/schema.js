@@ -3,23 +3,26 @@
 // x = en-tête Excel, t = type (date | money | rate | int | text), w = largeur de colonne Excel.
 
 export const TABLES = [
+  { key: 'projets', entity: 'projet', sheet: 'Projets', tbl: 'tblProjets', id: true, cols: [
+    { k: 'nom', x: 'Projet', w: 28 }, { k: 'type', x: 'Type', w: 14 }, { k: 'part', x: 'Ma part', t: 'rate', w: 10 },
+    { k: 'devise', x: 'Devise', w: 8 }, { k: 'note', x: 'Note', w: 40 }] },
   { key: 'tx', entity: 'tx', sheet: 'Transactions', tbl: 'tblTransactions', id: true, cols: [
     { k: 'date', x: 'Date', t: 'date', w: 12 }, { k: 'activite', x: 'Activité', w: 12 }, { k: 'sens', x: 'Sens', w: 9 },
     { k: 'categorie', x: 'Catégorie', w: 24 }, { k: 'detail', x: 'Détail', w: 18 }, { k: 'libelle', x: 'Libellé', w: 34 },
     { k: 'montant', x: 'Montant', t: 'money', w: 13 }, { k: 'devise', x: 'Devise', w: 8 }, { k: 'taux', x: 'Taux vers EUR', t: 'rate', w: 13 },
     { k: 'montantEur', db: 'montant_eur', x: 'Montant EUR', t: 'money', w: 13 }, { k: 'nature', x: 'Nature', w: 14 },
     { k: 'tiers', x: 'Tiers', w: 22 }, { k: 'lot', x: 'Lot', w: 28 }, { k: 'periode', x: 'Période', w: 10 },
-    { k: 'ref', x: 'Réf', w: 14 }, { k: 'note', x: 'Note', w: 30 }] },
+    { k: 'ref', x: 'Réf', w: 14 }, { k: 'note', x: 'Note', w: 30 }, { k: 'projetId', db: 'projet_id', x: 'Projet (ID)', t: 'uuid', w: 38 }] },
   { key: 'categories', entity: 'category', sheet: 'Catégories', tbl: 'tblCategories', id: false, cols: [
     { k: 'activite', x: 'Activité', w: 12 }, { k: 'sens', x: 'Sens', w: 9 }, { k: 'categorie', x: 'Catégorie', w: 28 },
     { k: 'groupe', x: 'Groupe', w: 26 }, { k: 'nature', x: 'Nature par défaut', w: 18 }, { k: 'icone', x: 'Icône', w: 8 }] },
   { key: 'lots', entity: 'lot', sheet: 'Lots', tbl: 'tblLots', id: true, cols: [
-    { k: 'code', x: 'Code', w: 8 }, { k: 'nom', x: 'Nom du lot', w: 32 }, { k: 'loyer', x: 'Loyer de référence (MAD)', t: 'money', w: 24 }] },
+    { k: 'code', x: 'Code', w: 8 }, { k: 'nom', x: 'Nom du lot', w: 32 }, { k: 'loyer', x: 'Loyer de référence (MAD)', t: 'money', w: 24 }, { k: 'projetId', db: 'projet_id', x: 'Projet (ID)', t: 'uuid', w: 38 }] },
   { key: 'tenants', entity: 'tenant', sheet: 'Locataires', tbl: 'tblLocataires', id: true, cols: [
     { k: 'lot', x: 'Lot', w: 30 }, { k: 'nom', x: 'Locataire', w: 26 }, { k: 'loyer', x: 'Loyer (MAD)', t: 'money', w: 12 },
     { k: 'charges', x: 'Charges forfait (MAD)', t: 'money', w: 20 }, { k: 'entree', x: 'Date entrée', t: 'date', w: 13 },
     { k: 'sortie', x: 'Date sortie', t: 'date', w: 13 }, { k: 'caution', x: 'Caution (MAD)', t: 'money', w: 14 },
-    { k: 'contact', x: 'Contact', w: 18 }, { k: 'metier', x: 'Métier', w: 24 }, { k: 'note', x: 'Note', w: 40 }] },
+    { k: 'contact', x: 'Contact', w: 18 }, { k: 'metier', x: 'Métier', w: 24 }, { k: 'note', x: 'Note', w: 40 }, { k: 'projetId', db: 'projet_id', x: 'Projet (ID)', t: 'uuid', w: 38 }] },
   { key: 'clients', entity: 'client', sheet: 'Clients', tbl: 'tblClients', id: true, cols: [
     { k: 'nom', x: 'Client', w: 28 }, { k: 'devise', x: 'Devise', w: 8 }, { k: 'tjm', x: 'TJM', t: 'money', w: 10 },
     { k: 'tva', x: 'TVA', t: 'rate', w: 8 }, { k: 'micro', x: 'Compte dans la micro (Oui/Non)', w: 28 }, { k: 'note', x: 'Note', w: 30 }] },
@@ -33,7 +36,7 @@ export const TABLES = [
     { k: 'libelle', x: 'Libellé', w: 30 }, { k: 'activite', x: 'Activité', w: 12 }, { k: 'sens', x: 'Sens', w: 9 },
     { k: 'categorie', x: 'Catégorie', w: 24 }, { k: 'montant', x: 'Montant', t: 'money', w: 12 }, { k: 'devise', x: 'Devise', w: 8 },
     { k: 'jour', x: 'Jour du mois', t: 'int', w: 12 }, { k: 'debut', x: 'Début', t: 'date', w: 12 }, { k: 'fin', x: 'Fin', t: 'date', w: 12 },
-    { k: 'actif', x: 'Actif (Oui/Non)', w: 14 }, { k: 'nature', x: 'Nature', w: 14 }, { k: 'tiers', x: 'Tiers', w: 20 }, { k: 'lot', x: 'Lot', w: 24 }] },
+    { k: 'actif', x: 'Actif (Oui/Non)', w: 14 }, { k: 'nature', x: 'Nature', w: 14 }, { k: 'tiers', x: 'Tiers', w: 20 }, { k: 'lot', x: 'Lot', w: 24 }, { k: 'projetId', db: 'projet_id', x: 'Projet (ID)', t: 'uuid', w: 38 }] },
   { key: 'accounts', entity: 'account', sheet: 'Comptes', tbl: 'tblComptes', id: true, cols: [
     { k: 'nom', x: 'Compte', w: 30 }, { k: 'devise', x: 'Devise', w: 8 }, { k: 'dispo', x: 'Disponible (Oui/Non)', w: 20 },
     { k: 'ordre', x: 'Ordre', t: 'int', w: 8 }] },
@@ -55,7 +58,7 @@ const isNum = (c) => c.t === 'money' || c.t === 'rate' || c.t === 'int';
 
 // Ligne venant de la base -> objet attendu par l'interface (chaînes vides plutôt que null, nombres en Number)
 export function fromDb(def, r) {
-  const o = { id: r.id, seq: r.seq, version: r.version };
+  const o = { id: r.id, seq: r.seq, version: r.version, uid: r.user_id };
   for (const c of def.cols) {
     const v = r[dbCol(c)];
     o[c.k] = isNum(c) ? (v == null ? 0 : Number(v)) : (v == null ? '' : String(v).slice(0, c.t === 'date' ? 10 : undefined));
@@ -72,7 +75,7 @@ export function toDb(def, o) {
     if (!(c.k in o)) continue;
     let v = o[c.k];
     if (isNum(c)) { v = v === '' || v == null ? 0 : Number(String(v).replace(',', '.')); if (!isFinite(v)) v = 0; if (c.t === 'int') v = Math.round(v); }
-    else if (c.t === 'date') v = v ? String(v).slice(0, 10) : null;
+    else if (c.t === 'date' || c.t === 'uuid') v = v ? String(v).slice(0, c.t === 'date' ? 10 : 36) : null;
     else v = v == null ? '' : String(v);
     r[dbCol(c)] = v;
   }

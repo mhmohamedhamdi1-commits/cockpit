@@ -36,7 +36,8 @@ export async function exportExcel(data = null, name = null) {
   try {
     const XLSX = await loadXLSX();
     if (!data) await flush().catch(() => {});
-    const wb = buildWorkbook(XLSX, data || S.data);
+    const own = {}; for (const [k, v] of Object.entries(data || S.data)) own[k] = Array.isArray(v) ? v.filter((r) => !r.uid || !S.user || r.uid === S.user.id) : v;
+    const wb = buildWorkbook(XLSX, own);
     const fname = name || exportFileName();
     await saveFile(XLSX.write(wb, { type: 'array', bookType: 'xlsx', compression: true }), fname);
     toast(`Export Excel créé : ${fname}`);

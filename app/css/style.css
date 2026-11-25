@@ -456,3 +456,17 @@ input.otp { font: 700 26px/1 var(--mono); letter-spacing: .35em; text-align: cen
 .morelogout small { display: block; color: var(--ink-3); font-weight: 450; font-size: 12.5px; }
 .fxbox { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px 14px; margin-top: 12px; }
 .fxbox b { font-size: 16px; }
+
+.pbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.pchip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface); border-radius: 99px; padding: 7px 14px; font-weight: 650; color: var(--ink-2); }
+.pchip.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.pchip.add { border-style: dashed; }
+.pcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-top: 14px; }
+.pcard { border: 1px solid var(--line); border-radius: 14px; padding: 14px; cursor: pointer; background: var(--surface-2); display: flex; flex-direction: column; gap: 4px; }
+.pcard:hover { border-color: var(--ink-3); }
+.pdetail { display: flex; justify-content: space-between; gap: 14px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
+.pdetail b { font-size: 17px; }
+.pdetail .sub { display: block; color: var(--ink-3); font-size: 12.5px; }
+.invlink { margin: 8px 0; }
+.readonly-banner { background: var(--info-bg); color: var(--info-ink); border-radius: 10px; padding: 8px 12px; font-weight: 600; font-size: 13px; }
+@media (max-width: 760px) { .pbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; } .pchip { white-space: nowrap; } }

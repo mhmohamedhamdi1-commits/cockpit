@@ -47,7 +47,7 @@ async function deploySupabase() {
   ensureGenerated();
   const keys = await apiKeys(env);
   if (!env.SUPABASE_PUBLISHABLE_KEY) { setEnv('SUPABASE_PUBLISHABLE_KEY', keys.publishable); env.SUPABASE_PUBLISHABLE_KEY = keys.publishable; }
-  for (const f of ['0001_schema.sql', '0002_logic.sql', '0004_accounts.sql']) { await sql(env, read('supabase/migrations/' + f)); log('Migration', f); }
+  for (const f of ['0001_schema.sql', '0002_logic.sql', '0004_accounts.sql', '0005_projets.sql']) { await sql(env, read('supabase/migrations/' + f)); log('Migration', f); }
   await sql(env, `do $$ begin
     if exists (select 1 from vault.secrets where name = 'cockpit_cron_secret') then
       perform vault.update_secret((select id from vault.secrets where name = 'cockpit_cron_secret'), '${env.CRON_SECRET}');

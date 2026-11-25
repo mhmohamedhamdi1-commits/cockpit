@@ -7,6 +7,8 @@ import { listFactors, addFactor, verifyFactor, removeFactor, changePassword, log
 import { exportExcel, importExcel, listRestorePoints, createRestorePoint, backToPoint, openHistory, backupsEnabled, listBackups, downloadBackup, restoreBackup } from '../data.js';
 import { pushStatus, enablePush, disablePush, listDevices, removeDevice, testPush } from '../push.js';
 import { CONFIG } from '../../config.js';
+import { openLot } from './immo.js';
+import { isMine } from '../state.js';
 
 export function meta() { return { title: 'Paramètres', sub: 'Compte, notifications, données, taux et catégories', period: false, immoToggle: false }; }
 
@@ -41,19 +43,9 @@ function openCategory(c = {}) {
       h('button', { class: 'btn primary lg', onClick: async () => { if (!nom.value.trim()) return toast('Nom obligatoire', 'error'); if (await ops([{ e: 'category', op: 'upsert', item: { activite: act.value, sens: sens.value, categorie: nom.value.trim(), groupe: grp.value.trim() || 'Autres', nature: nat.value, icone: ic.value.trim() || '•' } }], 'Catégorie enregistrée')) m.close(); } }, 'Enregistrer')] });
 }
 
-function openLot(l = {}) {
-  const editing = !!l.id;
-  const code = h('input', { type: 'text', value: l.code || '', placeholder: '11' }), nom = h('input', { type: 'text', value: l.nom || '', placeholder: '11. 1er étage (Côté rue)' });
-  const loyer = h('input', { type: 'number', value: l.loyer || '', step: 50 });
-  const m = modal({ title: editing ? 'Modifier le lot' : 'Nouveau lot', width: 500, body: [field('Code', code), field('Nom du lot', nom, 'Le nom doit être identique à celui utilisé dans les locataires et les opérations.'), field('Loyer de référence (MAD)', loyer)],
-    footer: [editing ? h('button', { class: 'btn danger', onClick: async () => { if (await confirmBox('Supprimer ce lot ?', { ok: 'Supprimer', danger: true })) { if (await ops([del('lot', l.id)], 'Lot supprimé')) m.close(); } } }, icon('trash', 15), 'Supprimer') : null,
-      h('span', { class: 'sp' }), h('button', { class: 'btn', onClick: () => m.close() }, 'Annuler'),
-      h('button', { class: 'btn primary lg', onClick: async () => { if (!nom.value.trim()) return toast('Nom obligatoire', 'error'); if (await ops([upsert('lot', { id: l.id || 0, code: code.value.trim(), nom: nom.value.trim(), loyer: +loyer.value || 0 })], 'Lot enregistré')) m.close(); } }, 'Enregistrer')] });
-}
-
 export function render() {
   const general = h('div', { class: 'card' }, h('header', null, h('h2', null, 'Général')),
-    h('div', { class: 'grid3' }, paramInput('Prénom', 'nom', { type: 'text' }), paramInput('Taux de change : 1 MAD = … €', 'taux_mad_eur', { step: 0.0001, hint: 'Sert aux nouvelles opérations en MAD' }), paramInput('Ma part du projet immobilier (%)', 'part_immo', { pctMode: true, step: 1, hint: 'Pondère l’immobilier dans le tableau de bord' })),
+    h('div', { class: 'grid3' }, paramInput('Prénom', 'nom', { type: 'text' }), paramInput('Taux de change : 1 MAD = … €', 'taux_mad_eur', { step: 0.0001, hint: 'Sert aux nouvelles opérations en MAD' }), paramInput('Part par défaut (opérations sans projet) (%)', 'part_immo', { pctMode: true, step: 1, hint: 'La part se règle par projet dans Immobilier' })),
     fxCard(),
     h('div', { class: 'row-actions', style: { marginTop: '14px' } },
       h('button', { class: 'btn', onClick: async () => { if (await confirmBox('Recalculer chaque opération et relevé en MAD avec le taux réel du jour où elle a eu lieu (disponible depuis mars 2024 ; avant, le taux actuel est utilisé) ? Chaque montant modifié reste annulable dans l’historique.', { ok: 'Recalculer' })) await ops([action('recompute_rates', { mode: 'historique' })], 'Historique MAD recalculé aux taux réels'); } }, icon('repeat', 16), 'Taux réel à la date de chaque opération'),
@@ -72,8 +64,9 @@ export function render() {
   const catCard = h('div', { class: 'card' }, h('header', null, h('h2', null, 'Catégories'), h('span', { class: 'sub' }, 'les boutons de la saisie rapide'), h('div', { class: 'right' }, h('button', { class: 'btn sm', onClick: () => openCategory() }, icon('plus', 15), 'Catégorie'))),
     h('div', { style: { display: 'flex', flexDirection: 'column', gap: '14px' } }, groups.map(([act, sens, cs]) => h('div', null, h('div', { class: 'grp' }, h('i', { class: 'adot ' + act }), `${act} · ${sens === 'Dépense' ? 'Dépenses' : 'Revenus'}`),
       h('div', { class: 'catgrid' }, cs.map((c) => h('button', { class: 'cat', title: `${c.groupe} · ${c.nature}`, onClick: () => openCategory(c) }, h('span', { class: 'em' }, c.icone), c.categorie, c.nature !== 'Courant' ? h('span', { class: 'pill mute' }, c.nature) : null)))))));
-  const lotCard = h('div', { class: 'card' }, h('header', null, h('h2', null, 'Lots immobiliers'), h('div', { class: 'right' }, h('button', { class: 'btn sm', onClick: () => openLot() }, icon('plus', 15), 'Lot'))),
-    h('table', { class: 'tbl' }, h('tbody', null, S.lots.map((l) => h('tr', { class: 'click', onClick: () => openLot(l) }, h('td', null, l.code), h('td', null, l.nom), h('td', { class: 'r num muted' }, l.loyer ? `${l.loyer} MAD` : ''))))));
+  const pname = (id) => ((S.data.projets || []).find((p) => p.id === id) || {}).nom || '— sans projet —';
+  const lotCard = h('div', { class: 'card' }, h('header', null, h('h2', null, 'Lots immobiliers'), h('span', { class: 'sub' }, 'regroupés par projet (Immobilier)'), h('div', { class: 'right' }, h('button', { class: 'btn sm', onClick: () => openLot() }, icon('plus', 15), 'Lot'))),
+    h('table', { class: 'tbl' }, h('tbody', null, S.lots.filter(isMine).map((l) => h('tr', { class: 'click', onClick: () => openLot(l) }, h('td', null, l.code), h('td', null, l.nom, h('span', { class: 'sub' }, pname(l.projetId))), h('td', { class: 'r num muted' }, l.loyer ? `${l.loyer} MAD` : ''))))));
   const theme = h('div', { class: 'card' }, h('header', null, h('h2', null, 'Apparence')),
     segmented([{ value: 'auto', label: 'Automatique' }, { value: 'light', label: 'Clair' }, { value: 'dark', label: 'Sombre' }], S.theme, (v) => { S.theme = v; savePrefs(); applyTheme(); }));
   return [h('div', { class: 'row2e' }, accountCard(), notifCard()), dataCard(), installCard(), general, fisc, h('div', { class: 'row2e' }, catCard, h('div', { style: { display: 'flex', flexDirection: 'column', gap: '18px' } }, lotCard, theme))];

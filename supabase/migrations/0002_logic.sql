@@ -178,6 +178,12 @@ create or replace function public.ck_cascade(p_uid uuid, p_tbl text, p_old jsonb
 language plpgsql set search_path = public, pg_temp as $$
 declare o text := p_old ->> 'nom'; n text := p_new ->> 'nom';
 begin
+  -- un lot change de projet : ses locataires et opérations suivent
+  if p_tbl = 'lots' and (p_old ->> 'projet_id') is distinct from (p_new ->> 'projet_id') then
+    update public.tenants set projet_id = public.ck_uuid(p_new ->> 'projet_id') where user_id = p_uid and lot = o and deleted_at is null;
+    update public.tx set projet_id = public.ck_uuid(p_new ->> 'projet_id') where user_id = p_uid and lot = o and activite = 'Immobilier' and deleted_at is null;
+    update public.recurring set projet_id = public.ck_uuid(p_new ->> 'projet_id') where user_id = p_uid and lot = o and deleted_at is null;
+  end if;
   if o is null or n is null or o = n then return; end if;
   if p_tbl = 'lots' then
     update public.tx set lot = n where user_id = p_uid and lot = o and deleted_at is null;
@@ -196,7 +202,7 @@ end $$;
 create or replace function public.ck_table_of(p_entity text) returns text language sql immutable set search_path = public, pg_temp as $$
   select case p_entity when 'tx' then 'tx' when 'lot' then 'lots' when 'tenant' then 'tenants' when 'client' then 'clients'
     when 'invoice' then 'invoices' when 'recurring' then 'recurring' when 'account' then 'accounts'
-    when 'snapshot' then 'snapshots' when 'rappel' then 'rappels' end
+    when 'snapshot' then 'snapshots' when 'rappel' then 'rappels' when 'projet' then 'projets' end
 $$;
 
 -- ---------- Actions ----------
@@ -218,7 +224,7 @@ begin
         perform public.ck_write(p_uid, 'tx', public.ck_fix(p_uid, 'tx', jsonb_build_object(
           'date', format('%s-%s', v_month, lpad(v_day::text, 2, '0')), 'activite', r.activite, 'sens', r.sens,
           'categorie', r.categorie, 'libelle', r.libelle, 'montant', r.montant, 'devise', r.devise, 'nature', r.nature,
-          'tiers', r.tiers, 'lot', r.lot, 'ref', v_ref)), false);
+          'tiers', r.tiers, 'lot', r.lot, 'ref', v_ref, 'projet_id', r.projet_id)), false);
       exception when sqlstate 'CK422' then
         perform public.ck_err(format('récurrent « %s » : %s', r.libelle, sqlerrm));
       end;
@@ -296,6 +302,9 @@ begin
       if cur is null or cur ->> 'deleted_at' is not null then continue; end if;   -- déjà supprimée : rien à faire
       ver := (o ->> 'version')::int;
       if ver is not null and ver <> (cur ->> 'version')::int then perform public.ck_conflict(tbl, cur); end if;
+      if tbl = 'projets' and exists (select 1 from public.lots where projet_id = v_id and user_id = p_uid and deleted_at is null) then
+        perform public.ck_err('ce projet contient encore des lots : déplace-les ou supprime-les d''abord');
+      end if;
       execute format('update public.%I set deleted_at = now() where id = $1 and user_id = $2', tbl) using v_id, p_uid;
       continue;
     end if;
@@ -316,6 +325,7 @@ begin
       full_row := item - 'version' - '_insert';
     end if;
     full_row := public.ck_fix(p_uid, tbl, full_row);
+    full_row := public.ck_fix_projet(p_uid, tbl, full_row);
     if cur is not null then perform public.ck_cascade(p_uid, tbl, cur, full_row); end if;
     ids := ids || public.ck_write(p_uid, tbl, full_row, cur is not null);
   end loop;
@@ -327,7 +337,7 @@ create or replace function public.ck_export(p_uid uuid) returns jsonb
 language plpgsql stable set search_path = public, pg_temp as $$
 declare t text; v jsonb := '{}'::jsonb; a jsonb;
 begin
-  foreach t in array array['tx','categories','lots','tenants','clients','invoices','recurring','accounts','snapshots','params','rappels'] loop
+  foreach t in array array['projets','tx','categories','lots','tenants','clients','invoices','recurring','accounts','snapshots','params','rappels'] loop
     execute format('select coalesce(jsonb_agg(to_jsonb(x) - ''user_id'' order by x.seq), ''[]'') from public.%I x where user_id = $1 and deleted_at is null', t)
       into a using p_uid;
     v := v || jsonb_build_object(t, a);
@@ -355,7 +365,7 @@ declare t text; r jsonb; v_id uuid; keep uuid[]; cnt jsonb := '{}'::jsonb; n int
 begin
   perform public.ck_snapshot(p_uid, coalesce(p_label, 'Avant restauration'));
   perform set_config('cockpit.device', 'restauration', true);
-  foreach t in array array['tx','categories','lots','tenants','clients','invoices','recurring','accounts','snapshots','params','rappels'] loop
+  foreach t in array array['projets','tx','categories','lots','tenants','clients','invoices','recurring','accounts','snapshots','params','rappels'] loop
     continue when jsonb_typeof(p_data -> t) is distinct from 'array';
     keep := '{}'; n := 0;
     for r in select * from jsonb_array_elements(p_data -> t) loop

@@ -313,6 +313,72 @@ await step('Taux de change réel affiché et appliqué aux nouvelles opérations
   assert.ok(Math.abs(Number(data.taux) - Number(fx.rate)) < 0.002, `taux appliqué ${data.taux} ≈ taux réel ${fx.rate}`);
 });
 
+
+await step('Projet partagé : lien d’invitation, l’invité voit UNIQUEMENT ce projet en lecture seule, retrait d’accès immédiat', async () => {
+  // le propriétaire (T1) range ses lots dans « Amal 1 » et crée un « Projet 2 » privé
+  const p1 = crypto.randomUUID(), p2 = crypto.randomUUID();
+  const { error: e0 } = await T1.client.rpc('apply_ops', { p_ops: [{ e: 'projet', op: 'upsert', item: { id: p1, _insert: true, nom: `Amal test ${tag}`, part: 0.67 } }, { e: 'projet', op: 'upsert', item: { id: p2, _insert: true, nom: `Projet 2 ${tag}`, part: 1 } }, { e: 'lot', op: 'upsert', item: { nom: `Lot secret ${tag}`, projet_id: p2, loyer: 5000 } }] });
+  if (e0) throw e0;
+  const { data: lots } = await T1.client.from('lots').select('id,version,nom').is('projet_id', null);
+  const { error: e1 } = await T1.client.rpc('apply_ops', { p_ops: lots.map((l) => ({ e: 'lot', op: 'upsert', item: { id: l.id, version: l.version, projet_id: p1 } })) });
+  if (e1) throw e1;
+  // partage via l'interface (PC du propriétaire)
+  await closeModals(A.page);
+  await A.page.goto(APP + '/#/immo');
+  await A.page.click(`.pchip:has-text("Amal test ${tag}")`);
+  await A.page.click('.pdetail button:has-text("Partager")');
+  await A.page.fill('.modal input[placeholder="ex. Fatima (sœur)"]', 'Sœur test');
+  await A.page.fill('.modal input[placeholder="33"]', '33');
+  await A.page.click('.modal button:has-text("Créer un lien d’invitation")');
+  const link = (await A.page.innerText('.modal .invlink code', { timeout: 15000 })).trim();
+  assert.ok(/#\/invitation\?i=[0-9a-f]{64}$/.test(link), 'lien : ' + link);
+  await closeModals(A.page);
+  // l'invité (T2, autre compte) ouvre le lien sur son iPhone
+  const G = await device('invité', devices['iPhone 14']);
+  await login(G.page, T2);
+  await G.page.goto(link.replace(/^https?:\/\/[^/]+/, APP));
+  await waitText(G.page, 'Tu as maintenant accès', 20000);
+  await waitText(G.page, `Amal test ${tag}`);
+  const body = await G.page.innerText('body');
+  assert.ok(!body.includes(`Projet 2 ${tag}`), 'Projet 2 invisible');
+  assert.ok(body.includes('lecture seule'), 'mention lecture seule');
+  assert.equal(await G.page.$('.pdetail button:has-text("Partager")'), null, 'pas de bouton Partager');
+  assert.equal(await G.page.$('button:has-text("Encaisser les loyers")'), null, 'pas d’encaissement');
+  // ce que la base renvoie à l'invité
+  const { count: nIn } = await T2.client.from('tx').select('id', { count: 'exact', head: true }).eq('projet_id', p1);
+  const { count: nAll } = await T2.client.from('tx').select('id', { count: 'exact', head: true });
+  const [{ n: nOwner }] = await sql(env, `select count(*)::int n from public.tx where projet_id = '${p1}' and deleted_at is null`);
+  assert.equal(nIn, nOwner, `toutes les opérations du projet visibles (${nIn}/${nOwner})`);
+  assert.equal(nAll, nIn, 'aucune autre opération visible (ni perso, ni Projet 2)');
+  const { data: glots } = await T2.client.from('lots').select('nom');
+  assert.ok(!glots.some((l) => l.nom === `Lot secret ${tag}`));
+  // lecture seule : ouvrir une opération -> pas de bouton Enregistrer ; écriture refusée côté serveur
+  await G.page.goto(APP + '/#/ops');
+  await G.page.click('tr.click >> nth=0');
+  await G.page.waitForSelector('.readonly-banner');
+  assert.equal(await G.page.$('.modal footer .btn.primary'), null);
+  await G.page.keyboard.press('Escape');
+  const { error: we } = await T2.client.rpc('apply_ops', { p_ops: [{ e: 'tx', op: 'upsert', item: { id: (await T2.client.from('tx').select('id').limit(1)).data[0].id, montant: 1 } }] });
+  assert.ok(we, 'modification refusée');
+  // sa part : 33 %
+  const { data: mem } = await T2.client.from('projet_membres').select('part, role, status').single();
+  assert.deepEqual([Number(mem.part), mem.role, mem.status], [0.33, 'lecteur', 'actif']);
+  // retrait de l'accès par le propriétaire -> l'invité ne voit plus rien
+  await A.page.goto(APP + '/#/immo');
+  await A.page.click('.pdetail button:has-text("Partager")');
+  await A.page.click('.modal button[title="Retirer l’accès"]');
+  await A.page.click('.overlay:last-child .modal footer .btn.danger');
+  await waitText(A.page, 'Accès retiré');
+  await closeModals(A.page);
+  const { data: after } = await T2.client.from('tx').select('id').limit(5);
+  assert.equal(after.length, 0, 'plus aucun accès côté base');
+  await G.page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await G.page.goto(APP + '/#/immo');
+  await waitNoText(G.page, `Amal test ${tag}`, 30000);
+  assert.deepEqual(G.page.errors, []);
+  await G.ctx.close();
+});
+
 } catch (e) { results.push(['❌', 'Erreur fatale', 0, e.message]); console.error(e); } finally {
 // ---------- nettoyage (toujours) ----------
 if (browser) await browser.close().catch(() => {});

@@ -50,7 +50,7 @@ export function parseWorkbook(XLSX, buf) {
     const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
     if (!rows.length) { data[def.key] = []; counts[def.key] = 0; continue; }
     const hdr = new Map(rows[0].map((h, i) => [String(h).trim(), i]));
-    const missing = def.cols.filter((c) => !hdr.has(c.x)).map((c) => c.x);
+    const missing = def.cols.filter((c) => !hdr.has(c.x) && c.t !== 'uuid').map((c) => c.x);
     if (missing.length) warnings.push(`${def.sheet} : colonne(s) absente(s) ${missing.join(', ')} (laissées vides)`);
     const out = [];
     rows.slice(1).forEach((r, i) => {
@@ -60,6 +60,7 @@ export function parseWorkbook(XLSX, buf) {
         const ci = hdr.get(c.x);
         const raw = ci == null ? '' : r[ci];
         const k = dbCol(c);
+        if (c.t === 'uuid') { if (ci != null) o[k] = UUID_RE.test(String(raw).trim()) ? String(raw).trim().toLowerCase() : null; continue; }
         if (c.t === 'date') o[k] = parseDate(raw) || null;
         else if (c.t === 'money' || c.t === 'rate') o[k] = parseNum(raw);
         else if (c.t === 'int') o[k] = Math.round(parseNum(raw));
