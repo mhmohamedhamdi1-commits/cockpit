@@ -20,6 +20,8 @@ for (const d of TABLES) db[d.key] = (src.data[d.key] || []).map((r) => ({ ...r, 
 db.projets = [{ id: projetId, user_id: UID, seq: seq++, version: 1, nom: 'Amal 1', type: 'Immobilier', part: 0.67, devise: 'MAD', note: '', created_at: now, updated_at: now, deleted_at: null }];
 for (const k of ['lots', 'tenants']) db[k].forEach((r) => { r.projet_id = projetId; });
 db.tx.forEach((t) => { if (t.activite === 'Immobilier') t.projet_id = projetId; });
+// un loyer impayé le mois dernier (pour tester la relance)
+{ const d = new Date(); d.setMonth(d.getMonth() - 1); const m = d.toISOString().slice(0, 7); const lot0 = db.lots[0].nom; db.tx = db.tx.filter((t) => !(t.activite === 'Immobilier' && t.categorie === 'Loyer' && t.lot === lot0 && (t.periode || t.date.slice(0, 7)) === m)); db.tenants.forEach((t) => { if (t.lot === lot0 && !t.contact) t.contact = '+212600000000'; }); }
 db.ordres = [
   { id: crypto.randomUUID(), user_id: UID, seq: seq++, version: 1, date: '2025-02-10', symbole: 'CW8.PA', nom: 'Amundi MSCI World', type: 'ETF', compte: 'PEA', sens: 'Achat', quantite: 10, prix: 480, frais: 2, devise: 'EUR', note: '', created_at: now, updated_at: now, deleted_at: null },
   { id: crypto.randomUUID(), user_id: UID, seq: seq++, version: 1, date: '2025-09-15', symbole: 'AIR.PA', nom: 'Airbus SE', type: 'Action', compte: 'CTO', sens: 'Achat', quantite: 5, prix: 170, frais: 1, devise: 'EUR', note: '', created_at: now, updated_at: now, deleted_at: null },
@@ -81,11 +83,14 @@ for (const [dev, opts] of [['bureau', { viewport: { width: 1440, height: 900 } }
     const tog = await p.$('.card .togbtn'); if (tog) { await tog.click(); await tog.click(); } else errs.push('pas de bouton replier');
     const mx = await p.$('.card .maxbtn'); if (mx) { await mx.click(); await p.keyboard.press('Escape'); }
     await p.goto(`${APP}/#/immo`); await p.waitForTimeout(400);
-    const rel = await p.$('button:has-text("Relancer"), button:has-text("Remind"), button:has-text("تذكير")');
-    if (rel) { await rel.click(); await p.waitForTimeout(300); await p.screenshot({ path: `/tmp/ui-${dev}-${lang}-relance.png` }); await p.keyboard.press('Escape'); }
+    const relSel = '.tbl button:has-text("Relancer"), .tbl button:has-text("Remind"), .tbl button:has-text("تذكير")';
+    if (await p.$(relSel)) {
+      try { await p.click(relSel, { timeout: 8000 }); await p.waitForSelector('.modal textarea', { timeout: 5000 }); await p.screenshot({ path: `/tmp/ui-${dev}-${lang}-relance.png` }); await p.keyboard.press('Escape'); }
+      catch (e) { errs.push('relance : ' + e.message.split('\n')[0]); }
+    } else errs.push('relance : bouton absent');
     await p.goto(`${APP}/#/bourse`); await p.waitForTimeout(1200);
     const pos = await p.$('.tbl tbody tr.click');
-    if (pos) { await pos.click(); await p.waitForTimeout(300); await p.screenshot({ path: `/tmp/ui-${dev}-${lang}-position.png` }); await p.keyboard.press('Escape'); } else errs.push('bourse : pas de position');
+    if (pos) { await p.click('.tbl tbody tr.click >> nth=0'); await p.waitForTimeout(300); await p.screenshot({ path: `/tmp/ui-${dev}-${lang}-position.png` }); await p.keyboard.press('Escape'); } else errs.push('bourse : pas de position');
     const real = errs.filter((e) => !/WebSocket|realtime|Failed to fetch/i.test(e));
     console.log(`${dev} ${lang}/${cur} :`, real.length ? '❌ ' + real.join(' | ') : '✅');
     if (real.length) fail++;

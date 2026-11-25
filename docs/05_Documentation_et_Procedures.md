@@ -206,7 +206,21 @@ Bouton « Déconnexion » en bas du menu latéral (PC) et « Se déconnecter » 
 | **Nom de domaine** (ex. cockpit-finances.fr) | Confiance, e-mails, App Store |
 | Passer Supabase en **Pro** (25 $/mois) dès les premiers clients payants | Sauvegardes natives, pas de mise en veille, support |
 
-## 8. Points d'attention
+## 8. Version 2 (branche main, environnement DEV — pas encore en production)
+| Évolution | Où |
+|---|---|
+| **Trésorerie actuelle** : cumul de tous les flux depuis le début. Perso + freelance = 1 908,73 € (compte en France), chaque projet (Amal 1 : 1 408 MAD, ta part 943 MAD), total de tes parts, détail du calcul, rapprochement avec le dernier relevé | Tableau de bord |
+| **Santé financière** : score sur 100 et 7 indicateurs vert / orange / rouge (taux d'épargne, épargne de précaution, tendance des dépenses, diversification des revenus, effort d'investissement, loyers encaissés, factures en retard), avec recommandations chiffrées | Tableau de bord |
+| **Ma part** : toujours appliquée en consolidé ; le choix « Ma part / Projet 100 % » n'existe que dans Immobilier, avec la part de chaque projet | Tableau de bord, Immobilier |
+| **Graphiques** : granularité choisie (Auto / Mois / Trimestre / Année), type (Barres / Courbes / Aires / Évolution de la trésorerie) | Tableau de bord, Bourse |
+| **Tableaux** : cartes repliables (accordéon accessible), plein écran, tri par colonne, ordre des colonnes par glisser-déposer (mémorisé) | Partout |
+| **Relance des locataires** par SMS ou WhatsApp, message en arabe ou en français prérempli et modifiable, envoi par toi, trace dans la fiche | Immobilier |
+| **Bourse** : ordres (achat, vente, dividende), cours Yahoo Finance actualisés chaque minute, prix de revient moyen pondéré, plus-values latentes et réalisées, dividendes, ROI par titre et global (non annualisé), évolution, répartition, simulation de vente avec impôt. Séparé des autres totaux | Bourse |
+| **Langues** FR / EN / العربية (interface de droite à gauche en arabe) et **devise d'affichage** EUR / MAD | Menu latéral, Paramètres › Apparence, écran de connexion |
+| **Design** inspiré d'iOS : couleurs système, police SF, contrôles segmentés, interrupteurs, grands titres | Partout |
+| **Environnements** : `main` → DEV, `release` → PROD ; déploiement PROD refusé hors `release` ; workflows GitHub (tests, déploiement) | `CONTRIBUTING.md`, `.github/workflows/` |
+
+## 9. Points d'attention
 - **Jetons d'accès** transmis dans la conversation : à révoquer puis recréer (Supabase › Account › Access Tokens ; Cloudflare › My Profile › API Tokens), et mettre les nouveaux dans `.env`.
 - **BACKUP_KEY** (dans `.env`) : recopie-la dans ton gestionnaire de mots de passe. Sans elle, les sauvegardes externes sont indéchiffrables (l'appli, elle, continue de fonctionner).
 - **PC LVMH** : le proxy Zscaler inspecte le trafic chiffré. Pour tes données financières, privilégie l'iPhone ou un ordinateur personnel.

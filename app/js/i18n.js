@@ -29,6 +29,7 @@ const PATTERNS = [
   [/^plus-values (.+) · dividendes (.+)$/, ['gains $1 · dividends $2', 'الأرباح $1 · التوزيعات $2']],
   [/^gain total (.+) sur (.+) investis \(non annualisé\)$/, ['total gain $1 on $2 invested (not annualized)', 'الربح الكلي $1 على $2 مستثمرة (غير سنوي)']],
   [/^Dernier relevé de comptes \((.+)\) : (.+) disponibles\. L’écart \((.+)\) correspond aux soldes antérieurs au (.+) ou à des opérations non saisies\.$/, ['Last account statement ($1): $2 available. The gap ($3) comes from balances before $4 or unrecorded transactions.', 'آخر كشف حسابات ($1): $2 متاحة. الفرق ($3) يعود لأرصدة قبل $4 أو عمليات غير مسجلة.']],
+  [/^(.+) · loyer de (.+) · (.+) attendus$/, ['$1 · rent for $2 · $3 expected', '$1 · كراء $2 · $3 متوقعة']],
   [/^Synchronisé (.+)$/, ['Synced $1', 'تمت المزامنة $1']],
   [/^il y a (\d+) min$/, ['$1 min ago', 'منذ $1 دقيقة']],
   [/^il y a (\d+) h$/, ['$1 h ago', 'منذ $1 ساعة']],
