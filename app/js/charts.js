@@ -2,17 +2,45 @@ import { h, sv, clear, compact as compact0, eur, monthShort, num0, displayRate }
 const compact = (v) => compact0(v * displayRate());
 
 // ---------- Tooltip ----------
-let tip;
+// L'infobulle est unique et posée sur <body> : elle doit se fermer dès que la zone qui l'a ouverte disparaît
+// (changement de vue / de période, nouveau rendu) ou que l'utilisateur agit ailleurs — sinon elle reste figée
+// (cas fréquent au toucher, où « mouseleave » n'arrive jamais).
+// Au toucher, les navigateurs envoient un « mouseleave » artificiel (Android : juste après le toucher, l'infobulle
+// clignote ; iPhone : jamais, elle reste figée). On l'ignore donc au toucher : l'infobulle reste ouverte jusqu'à un
+// toucher ailleurs, un défilement ou un changement de vue.
+let tip, anchor = null, lastPointer = 'mouse', forcing = false;
+const watcher = new MutationObserver(() => { if (anchor && !anchor.isConnected) hideTip(); });
+if (typeof document !== 'undefined') {
+  document.addEventListener('pointerdown', (e) => {
+    lastPointer = e.pointerType || 'mouse';
+    if (anchor && !anchor.contains(e.target)) hideTip();
+  }, true);
+  document.addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse') lastPointer = 'mouse'; }, { capture: true, passive: true });
+  for (const ev of ['scroll', 'wheel']) window.addEventListener(ev, () => hideTip(), { capture: true, passive: true });
+  for (const ev of ['resize', 'hashchange', 'popstate', 'blur']) window.addEventListener(ev, () => hideTip());
+  document.addEventListener('visibilitychange', () => hideTip());
+}
 function tipEl() { if (!tip) { tip = h('div', { class: 'tip' }); document.body.append(tip); } return tip; }
+// « mouseleave » d'une zone de graphique : ignoré s'il vient d'un toucher (sauf fermeture demandée par hideTip)
+function onLeave(el, fn) { el.addEventListener('mouseleave', () => { if (lastPointer === 'touch' && !forcing) return; fn(); }); }
 export function showTip(e, html) {
   const t = tipEl(); t.innerHTML = html; t.classList.add('on');
+  const a = e.currentTarget instanceof Element ? e.currentTarget : e.target instanceof Element ? e.target : null;
+  if (a !== anchor) { anchor = a; watcher.disconnect(); if (a) watcher.observe(document.body, { childList: true, subtree: true }); }
   const w = t.offsetWidth, hh = t.offsetHeight;
   let x = e.clientX + 16, y = e.clientY - hh / 2;
   if (x + w > window.innerWidth - 8) x = e.clientX - w - 16;
   y = Math.max(8, Math.min(y, window.innerHeight - hh - 8));
   t.style.left = x + 'px'; t.style.top = y + 'px';
 }
-export function hideTip() { tip && tip.classList.remove('on'); }
+export function hideTip() {
+  if (!tip) return;
+  tip.classList.remove('on');
+  watcher.disconnect();
+  const a = anchor; anchor = null;
+  // éteint aussi la surbrillance du graphique (bande / réticule), gérée par le « mouseleave » de la zone
+  if (a && a.isConnected) { forcing = true; try { a.dispatchEvent(new Event('mouseleave')); } finally { forcing = false; } }
+}
 
 function niceMax(v) {
   if (v <= 0) return 1;
@@ -71,7 +99,7 @@ export function barChart({ points, mode, height = 250 }) {
           <div class="tr"><span><i style="background:var(--flow-out)"></i>Dépenses</span><b class="num">${eur(p.dep)}</b></div>
           <div class="tr" style="border-top:1px solid var(--line);margin-top:4px;padding-top:4px"><span>Résultat</span><b class="num ${p.res >= 0 ? 'pos' : 'neg'}">${p.res >= 0 ? '+' : ''}${eur(p.res)}</b></div>`);
       });
-      hit.addEventListener('mouseleave', () => { band.setAttribute('opacity', 0); hideTip(); });
+      onLeave(hit, () => { band.setAttribute('opacity', 0); hideTip(); });
       svg.append(hit);
     });
     el.append(svg);
@@ -116,7 +144,7 @@ export function lineChart({ points, height = 240, fmt = eur }) {
         cross.setAttribute('x1', X(p.t)); cross.setAttribute('x2', X(p.t)); cross.setAttribute('opacity', 1);
         showTip(e, `<div class="th">${p.full || p.label}</div><div class="tr"><span>Patrimoine</span><b class="num">${fmt(p.y)}</b></div>`);
       });
-      hit.addEventListener('mouseleave', () => { cross.setAttribute('opacity', 0); hideTip(); });
+      onLeave(hit, () => { cross.setAttribute('opacity', 0); hideTip(); });
       svg.append(hit);
     });
     el.append(svg);
@@ -198,7 +226,7 @@ export function seriesChart({ labels, series, type = 'bar', height = 250, fmt = 
         showTip(e, `<div class="th">${l.full || l.label}</div>${series.map((s) => `<div class="tr"><span><i style="background:${s.color}"></i>${s.name}</span><b class="num">${fmt(s.values[i])}</b></div>`).join('')}`);
       };
       hit.addEventListener('mousemove', show); hit.addEventListener('touchstart', (e) => show(e.touches[0]), { passive: true });
-      hit.addEventListener('mouseleave', () => { band.setAttribute('opacity', 0); hideTip(); });
+      onLeave(hit, () => { band.setAttribute('opacity', 0); hideTip(); });
       svg.append(hit);
     });
     el.append(svg);
@@ -219,7 +247,7 @@ export function donut(items, { size = 170, fmt = eur, center = '' } = {}) {
     const p = (a) => `${c + r * Math.cos(a)},${c + r * Math.sin(a)}`;
     const arc = sv('path', { d: a1 - a0 >= Math.PI * 2 - 1e-6 ? `M${c},${c - r} A${r},${r} 0 1 1 ${c - 0.01},${c - r}` : `M${p(a0)} A${r},${r} 0 ${large} 1 ${p(a1)}`, fill: 'none', style: `stroke:${it.color}`, 'stroke-width': sw });
     arc.addEventListener('mousemove', (e) => showTip(e, `<div class="th">${it.label}</div><div class="tr"><span>${Math.round((it.value / total) * 100)} %</span><b class="num">${fmt(it.value)}</b></div>`));
-    arc.addEventListener('mouseleave', hideTip);
+    onLeave(arc, hideTip);
     svg.append(arc);
     a0 = a1;
   });
