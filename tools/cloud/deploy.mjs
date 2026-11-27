@@ -48,7 +48,7 @@ async function deploySupabase() {
   ensureGenerated();
   const keys = await apiKeys(env);
   if (!env[k('SUPABASE_PUBLISHABLE_KEY')]) { setEnv(k('SUPABASE_PUBLISHABLE_KEY'), keys.publishable); env[k('SUPABASE_PUBLISHABLE_KEY')] = keys.publishable; }
-  for (const f of ['0001_schema.sql', '0002_logic.sql', '0004_accounts.sql', '0005_projets.sql', '0006_bourse.sql']) { await sql(env, read('supabase/migrations/' + f)); log('Migration', f); }
+  for (const f of ['0001_schema.sql', '0002_logic.sql', '0004_accounts.sql', '0005_projets.sql', '0006_bourse.sql', '0007_v3.sql']) { await sql(env, read('supabase/migrations/' + f)); log('Migration', f); }
   await sql(env, `do $$ begin
     if exists (select 1 from vault.secrets where name = 'cockpit_cron_secret') then
       perform vault.update_secret((select id from vault.secrets where name = 'cockpit_cron_secret'), '${env.CRON_SECRET}');
@@ -63,7 +63,7 @@ async function deploySupabase() {
   log('Secrets de la fonction enregistrés');
   const shared = path.join(ROOT, 'supabase/functions/_shared');
   fs.mkdirSync(shared, { recursive: true });
-  for (const f of ['core.js', 'util.js', 'schema.js']) fs.copyFileSync(path.join(ROOT, 'app/js', f), path.join(shared, f));
+  for (const f of ['core.js', 'util.js', 'schema.js', 'entreprise.js', 'impot.js', 'impot-data.js']) if (fs.existsSync(path.join(ROOT, 'app/js', f))) fs.copyFileSync(path.join(ROOT, 'app/js', f), path.join(shared, f));
   for (const fn of ['rappels', 'bourse']) {
     run('npx', ['supabase', 'functions', 'deploy', fn, '--project-ref', REF, '--no-verify-jwt', '--use-api', '--yes'], { SUPABASE_ACCESS_TOKEN: env.SUPABASE_ACCESS_TOKEN });
     log(`Fonction « ${fn} » déployée`);
