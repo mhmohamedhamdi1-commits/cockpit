@@ -19,3 +19,14 @@ COCKPIT_ENV=dev node tests/e2e.mjs <url dev>         # tests de bout en bout sur
 node tools/cloud/deploy.mjs app                      # PROD : refusé hors de la branche release / avec des modifications non commitées
 ```
 Secrets : uniquement dans `.env` (jamais commité) ou dans les secrets GitHub.
+
+## Déploiement du site (Cloudflare Pages, build Git)
+Chaque projet Pages est branché sur ce dépôt et exécute `node tools/cloud/pages-build.mjs` (sortie : `dist`).
+Le script construit `app/` → `dist/` avec `config.js`, `sw.js` et `_headers` de l'environnement, et **échoue** si une variable manque
+(plus jamais de `__SUPABASE_PUBLISHABLE_KEY__` en ligne). Variables publiques à régler dans Pages > Settings > Variables :
+`SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `VAPID_PUBLIC_KEY`, `BACKUP_URL`.
+| Projet Pages | Branche de production | Base Supabase |
+|---|---|---|
+| `cockpit-finances-dev` | `main` | `cockpit-dev` |
+| `cockpit-finances` | `release` | `cockpit` (prod) |
+Ne jamais commiter de clé secrète, de jeton API ni de `config.js` généré. Pas de `wrangler.toml` (il désactiverait les variables du tableau de bord).
