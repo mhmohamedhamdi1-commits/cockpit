@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../..');
-const SRC = path.join(ROOT, 'app'), DIST = path.join(ROOT, 'dist');
+const SRC = path.join(ROOT, 'app'), DIST = process.env.DIST_DIR ? path.resolve(process.env.DIST_DIR) : path.join(ROOT, 'dist');   // DIST_DIR : tests d'interface en parallèle
 const e = process.env;
 
 const fail = (m) => { console.error('ERREUR build : ' + m); process.exit(1); };

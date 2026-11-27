@@ -415,16 +415,20 @@ export async function post(path) { throw new Error('Action indisponible dans la 
 
 // ---------- Projets ----------
 export const isMine = (r) => !r || !r.uid || !S.user || r.uid === S.user.id;
-export const projetsVisibles = () => [...(S.data.projets || [])].sort((a, b) => (isMine(b) - isMine(a)) || a.nom.localeCompare(b.nom));
+// Un « projet » est soit un immeuble (type Immobilier), soit une entreprise (type Entreprise)
+export const isImmo = (p) => !p || (p.type || 'Immobilier') === 'Immobilier';
+export const immoProjets = () => (S.data.projets || []).filter(isImmo);
+export const entreprises = () => [...(S.data.projets || [])].filter((p) => p.type === 'Entreprise').sort((a, b) => (a.seq || 0) - (b.seq || 0));
+export const projetsVisibles = () => immoProjets().sort((a, b) => (isMine(b) - isMine(a)) || a.nom.localeCompare(b.nom));
 export function membershipOf(projetId) {
   return S.memberships.find((m) => m.projet_id === projetId && m.user_id === (S.user && S.user.id) && m.status === 'actif');
 }
 // Ma part d'un projet : la part du propriétaire si c'est le mien, sinon celle fixée dans mon invitation
 // (plus de part globale : une opération sans projet prend la part de mon unique projet s'il n'y en a qu'un, sinon 100 %)
 export function partOf(projetId) {
-  const p = projetId && (S.data.projets || []).find((x) => x.id === projetId);
+  const p = projetId && (S.data.projets || []).find((x) => x.id === projetId);   // immeuble ou entreprise : « ma part » du projet
   if (!projetId || !p) {
-    const own = (S.data.projets || []).filter(isMine);
+    const own = immoProjets().filter(isMine);
     return own.length === 1 ? Number(own[0].part) : 1;
   }
   if (isMine(p)) return Number(p.part);

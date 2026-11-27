@@ -1,5 +1,5 @@
 import { h, clear, icon, eur, parseAmount, norm, addDays, fmtDate, CURRENCIES, curSym } from './util.js';
-import { S, ops, upsert, del, catsFor, savePrefs, isMine, projetOfLot, rateToEur } from './state.js';
+import { S, ops, upsert, del, catsFor, savePrefs, isMine, projetOfLot, rateToEur, immoProjets, entreprises } from './state.js';
 import { modal, segmented, field, select, confirmBox, toast } from './ui.js';
 import { activeTenants } from './calc.js';
 
@@ -44,6 +44,7 @@ export function openTxForm(initial = {}, { onSaved } = {}) {
     taux: initial.taux || 0,
     projetId: initial.projetId || (S.activity === 'Immobilier' && S.immoProjet) || '',
   };
+  let activitePrev = f.activite;
   let natureTouched = !!initial.nature;
   let deviseTouched = !!initial.devise;
   const defDevise = () => (f.activite === 'Immobilier' ? 'MAD' : 'EUR');
@@ -58,7 +59,7 @@ export function openTxForm(initial = {}, { onSaved } = {}) {
   const convEl = h('div', { class: 'muted num', style: { fontSize: '12.5px', minHeight: '18px', marginTop: '-8px' } });
   const conv = () => { const v = parseAmount(amountIn.value); const tx = f.taux || rateToEur(f.devise); convEl.textContent = f.devise !== 'EUR' && v ? `≈ ${eur(v * tx, 2)} (1 ${f.devise} = ${tx.toFixed(4).replace('.', ',')} €)` : ''; };
   amountIn.addEventListener('input', conv);
-  const actSeg = segmented(ACTS, f.activite, (v) => { f.activite = v; if (!deviseTouched) { f.devise = defDevise(); devSeg.set(f.devise); } if (!editing) f.categorie = ''; f.tiers = ''; f.lot = ''; renderCats(); renderExtras(); conv(); }, 'block');
+  const actSeg = segmented(ACTS, f.activite, (v) => { f.activite = v; if (v !== 'Immobilier' && v !== 'Entreprise') f.projetId = ''; else if (v !== activitePrev) f.projetId = ''; activitePrev = v; if (!deviseTouched) { f.devise = defDevise(); devSeg.set(f.devise); } if (!editing) f.categorie = ''; f.tiers = ''; f.lot = ''; renderCats(); renderExtras(); conv(); }, 'block');
   const catsBox = h('div'); const extras = h('div', { class: 'grid2' });
   const libIn = h('input', { type: 'text', placeholder: 'ex. Lidl, Loyer novembre, Facture mission…', value: f.libelle, autocomplete: 'off', 'aria-label': 'Libellé' });
   const sugBox = h('div', { class: 'suggest', style: { display: 'none' } });
@@ -96,7 +97,7 @@ export function openTxForm(initial = {}, { onSaved } = {}) {
   function renderExtras() {
     clear(extras);
     if (f.activite === 'Immobilier') {
-      const projs = (S.data.projets || []).filter((p) => isMine(p) || p.id === f.projetId);
+      const projs = immoProjets().filter((p) => isMine(p) || p.id === f.projetId);
       if (!f.projetId && f.lot) f.projetId = projetOfLot(f.lot);
       if (!f.projetId && projs.length === 1) f.projetId = projs[0].id;
       const projSel = select([{ value: '', label: '— Sans projet —' }, ...projs.map((p) => ({ value: p.id, label: p.nom }))], f.projetId);
@@ -121,7 +122,11 @@ export function openTxForm(initial = {}, { onSaved } = {}) {
       const cl = [{ value: '', label: '— Aucun —' }, ...S.data.clients.map((c) => ({ value: c.nom, label: c.nom }))];
       const sel = select(cl, f.tiers);
       sel.addEventListener('change', () => { f.tiers = sel.value; });
-      extras.append(field(f.sens === 'Revenu' ? 'Client' : 'Fournisseur / client lié', sel));
+      const ents = entreprises();
+      if (!ents.some((e) => e.id === f.projetId)) f.projetId = ents.length === 1 ? ents[0].id : '';
+      const entSel = select([...(ents.length > 1 ? [{ value: '', label: '— Choisir —' }] : []), ...ents.map((e) => ({ value: e.id, label: e.nom }))], f.projetId);
+      entSel.addEventListener('change', () => { f.projetId = entSel.value; });
+      extras.append(ents.length ? field('Entreprise', entSel) : null, field(f.sens === 'Revenu' ? 'Client' : 'Fournisseur / client lié', sel));
     } else {
       const t = h('input', { type: 'text', value: f.tiers, placeholder: 'Facultatif (employeur, enseigne…)' });
       t.addEventListener('input', () => { f.tiers = t.value; });
@@ -170,7 +175,7 @@ export function openTxForm(initial = {}, { onSaved } = {}) {
     const item = {
       id: f.id, date: f.date, activite: f.activite, sens: f.sens, categorie: f.categorie, detail: f.detail, libelle: f.libelle || f.categorie,
       montant: v, devise: f.devise, taux: f.taux || 0, nature: natureTouched ? natSel.value : (editing && f.categorie === origCat ? f.nature : ''),
-      projetId: f.activite === 'Immobilier' ? f.projetId : '', tiers: f.tiers, lot: f.lot, periode: editing && f.date.slice(0, 7) === (initial.date || '').slice(0, 7) ? f.periode : '', ref: f.ref, note: f.note,
+      projetId: f.activite === 'Immobilier' || f.activite === 'Entreprise' ? f.projetId : '', tiers: f.tiers, lot: f.lot, periode: editing && f.date.slice(0, 7) === (initial.date || '').slice(0, 7) ? f.periode : '', ref: f.ref, note: f.note,
       ...(editing ? { version: initial.version, _base: initial } : {}),
     };
     if (initial.periode && !editing) item.periode = initial.periode;

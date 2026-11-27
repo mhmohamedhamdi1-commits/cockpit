@@ -1,5 +1,5 @@
 import { h, icon, eur, mad, num0, pct, monthsBetween, monthShort, monthLong, monthEnd, addMonths, fmtDate, sum, clear, CUR_CODES } from '../util.js';
-import { S, ops, upsert, del, todayMonth, emit, savePrefs, isMine, projetsVisibles, membershipOf, partOf, projetOfLot } from '../state.js';
+import { S, ops, upsert, del, todayMonth, emit, savePrefs, isMine, projetsVisibles, immoProjets, membershipOf, partOf, projetOfLot } from '../state.js';
 import { sb } from '../supa.js';
 import { txs, rentCell, tenancyFor, activeTenants, summarize } from '../calc.js';
 import { modal, field, select, confirmBox, empty, toast, segmented } from '../ui.js';
@@ -10,10 +10,10 @@ import { barList } from '../charts.js';
 export function meta() { const p = curProjet(); return { title: p ? p.nom : 'Immobilier', sub: p ? (isMine(p) ? 'Projet immobilier' : `Partagé avec toi en lecture seule`) : 'Tous tes projets immobiliers', immoToggle: true }; }
 
 // ---------- projet sélectionné ('' = tous) ----------
-const curProjet = () => (S.immoProjet && (S.data.projets || []).find((p) => p.id === S.immoProjet)) || null;
+const curProjet = () => (S.immoProjet && immoProjets().find((p) => p.id === S.immoProjet)) || null;
 const inScope = (pid) => { const p = curProjet(); return !p || pid === p.id; };
 const scopeLots = () => S.lots.filter((l) => inScope(l.projetId));
-const ownProjets = () => (S.data.projets || []).filter(isMine);
+const ownProjets = () => immoProjets().filter(isMine);
 export function badge() { return 0; }
 
 const toMad = (t) => (t.devise === 'MAD' ? t.montant : t.montantEur / S.P.taux);

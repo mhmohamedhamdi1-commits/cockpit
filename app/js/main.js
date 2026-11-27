@@ -1,5 +1,5 @@
 import { h, icon, clear, monthLabel, monthLong, addMonths, monthNames, monthShort, CURRENCIES } from './util.js';
-import { S, load, loadPrefs, savePrefs, subscribe, emit, reload, setPeriod, setActivity, startSync, flush, wipeLocal, stopSync, partLabel } from './state.js';
+import { S, load, loadPrefs, savePrefs, subscribe, emit, reload, setPeriod, setActivity, startSync, flush, wipeLocal, stopSync, partLabel, immoProjets } from './state.js';
 import { segmented, popover, toast, modal } from './ui.js';
 import { ensureAuth, watchRecovery, logout } from './auth.js';
 import { sb } from './supa.js';
@@ -16,14 +16,18 @@ import * as wealth from './views/wealth.js';
 import * as recurring from './views/recurring.js';
 import * as settings from './views/settings.js';
 import * as bourse from './views/bourse.js';
+import * as imports from './views/imports.js';
+import * as impot from './views/impot.js';
 
 const ROUTES = {
   dashboard: { label: 'Tableau de bord', ic: 'dash', v: dashboard },
   ops: { label: 'Opérations', ic: 'list', v: opsView },
+  imports: { label: 'À valider', ic: 'inbox', v: imports },
   entreprise: { label: 'Entreprise', ic: 'brief', v: entreprise },
   immo: { label: 'Immobilier', ic: 'building', v: immo },
   wealth: { label: 'Patrimoine', ic: 'bank', v: wealth },
   bourse: { label: 'Bourse', ic: 'trend', v: bourse },
+  impot: { label: 'Impôt', ic: 'percent', v: impot },
   recurring: { label: 'Automatismes', ic: 'repeat', v: recurring },
   settings: { label: 'Paramètres', ic: 'sliders', v: settings },
 };
@@ -171,7 +175,7 @@ function renderTop() {
   const title = h('h1', null, meta.title || r.label, meta.sub ? h('span', { class: 'sub' }, meta.sub) : null);
   refs.top.append(title);
   if (meta.immoToggle) {
-    const pid = S.immoProjet && (S.data.projets || []).some((p) => p.id === S.immoProjet) ? S.immoProjet : '';
+    const pid = S.immoProjet && immoProjets().some((p) => p.id === S.immoProjet) ? S.immoProjet : '';
     refs.top.append(segmented([{ value: 'mine', label: partLabel(pid) }, { value: 'full', label: 'Total (100 %)' }], S.immoView, (v) => { S.immoView = v; savePrefs(); emit(); }));
   }
   if (meta.activity) {
