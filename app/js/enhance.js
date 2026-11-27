@@ -9,9 +9,20 @@ const sortState = {};
 const hash = (s) => { let x = 0; for (const c of s) x = (x * 31 + c.charCodeAt(0)) | 0; return (x >>> 0).toString(36); };
 const cardKey = (card) => `${S.route}:${(card.querySelector(':scope > header h2') || {}).textContent || ''}`.trim();
 
+// Carte agrandie : sa clé survit aux rafraîchissements de l'écran (synchro toutes les 30 s, temps réel…) —
+// avant, la carte était reconstruite sans l'état « agrandi » alors que le voile restait : écran flou et figé.
+let maxKey = null;
+function setMaxUi(card, on) {
+  const b = card.querySelector('.cardtools .maxbtn');
+  card.classList.toggle('maxed', on);
+  document.body.classList.toggle('has-max', on);
+  if (b) { b.replaceChildren(icon(on ? 'minimize' : 'maximize', 15)); b.title = on ? 'Réduire' : 'Agrandir'; b.setAttribute('aria-pressed', String(on)); }
+}
 function closeMax() {
+  maxKey = null;
   const c = document.querySelector('.card.maxed');
-  if (c) { c.classList.remove('maxed'); document.body.classList.remove('has-max'); const b = c.querySelector('.cardtools .maxbtn'); if (b) { b.replaceChildren(icon('maximize', 15)); b.title = 'Agrandir'; b.setAttribute('aria-pressed', 'false'); } }
+  if (c) setMaxUi(c, false);
+  document.body.classList.remove('has-max');
 }
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.querySelector('.card.maxed') && !document.querySelector('.overlay')) closeMax(); });
 
@@ -40,14 +51,15 @@ function enhanceCard(card) {
     if (card.classList.contains('maxed')) return closeMax();
     closeMax();
     card.classList.remove('collapsed');
-    card.classList.add('maxed'); document.body.classList.add('has-max');
-    max.replaceChildren(icon('minimize', 15)); max.title = 'Réduire'; max.setAttribute('aria-pressed', 'true');
+    maxKey = key;
+    setMaxUi(card, true);
   });
   const h2 = head.querySelector('h2');
   h2.classList.add('clickable'); h2.setAttribute('role', 'button'); h2.tabIndex = 0;
   h2.addEventListener('click', toggle);
   h2.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
   head.append(h('div', { class: 'cardtools' }, max, tog));
+  if (maxKey && key === maxKey) { card.classList.remove('collapsed'); setMaxUi(card, true); }   // l'écran vient d'être redessiné : on garde la carte agrandie
 }
 
 // ---------- tableaux ----------
@@ -129,6 +141,8 @@ export function enhance(root) {
   if (!root) return;
   root.querySelectorAll('.card').forEach(enhanceCard);
   root.querySelectorAll('table.tbl').forEach(enhanceTable);
+  // garde-fou : jamais de voile sans carte agrandie
+  if (!document.querySelector('.card.maxed')) { maxKey = null; document.body.classList.remove('has-max'); }
 }
 export function resetLayout() { S.collapsed = {}; S.colOrder = {}; savePrefs(); }
 export { closeMax };

@@ -179,7 +179,9 @@ function renderTop() {
     refs.top.append(segmented([{ value: 'mine', label: partLabel(pid) }, { value: 'full', label: 'Total (100 %)' }], S.immoView, (v) => { S.immoView = v; savePrefs(); emit(); }));
   }
   if (meta.activity) {
-    refs.top.append(segmented([{ value: 'Tout', label: 'Tout' }, { value: 'Perso', label: 'Perso', dot: 'bg-Perso' }, { value: 'Entreprise', label: 'Entreprise', dot: 'bg-Entreprise' }, { value: 'Immobilier', label: 'Immobilier', dot: 'bg-Immobilier' }], S.activity, setActivity));
+    const all = [{ value: 'Tout', label: 'Tout' }, { value: 'Perso', label: 'Perso', dot: 'bg-Perso' }, { value: 'Entreprise', label: 'Entreprise', dot: 'bg-Entreprise' }, { value: 'Immobilier', label: 'Immobilier', dot: 'bg-Immobilier' }, { value: 'Bourse', label: 'Bourse', dot: 'bg-Bourse' }];
+    const items = meta.activity === 'ops' ? all.filter((a) => a.value !== 'Bourse') : all;     // la bourse n'a pas d'opérations : filtre réservé au tableau de bord
+    refs.top.append(segmented(items, items.some((a) => a.value === S.activity) ? S.activity : 'Tout', setActivity));
   }
   if (meta.period !== false) {
     const b = h('button', { class: 'pillbtn', type: 'button', onClick: () => openPeriod(b) }, icon('calendar', 17), periodText(), icon('right', 14));
@@ -190,12 +192,14 @@ function renderTop() {
 let renderToken = 0;
 function renderView() {
   const st = refs.scroll.scrollTop;
+  const mx = document.querySelector('.card.maxed'), mst = mx ? mx.scrollTop : 0;
   clear(refs.scroll);
   const r = ROUTES[S.route];
   try { refs.scroll.append(h('div', { class: 'page' }, r.v.render())); }
   catch (e) { console.error(e); refs.scroll.append(h('div', { class: 'card' }, h('b', null, 'Erreur d’affichage'), h('pre', { style: { whiteSpace: 'pre-wrap' } }, String(e.stack || e)))); }
   refs.scroll.scrollTop = st;
   enhance(refs.scroll);
+  const mx2 = document.querySelector('.card.maxed'); if (mx2) mx2.scrollTop = mst;
 }
 function renderAll() { renderNav(); renderTop(); renderView(); document.title = `${ROUTES[S.route].label} — Cockpit`; updateBadge(); }
 

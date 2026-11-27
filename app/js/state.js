@@ -441,4 +441,6 @@ export function partLabel(projetId) {
   const parts = [...new Set(projetsVisibles().map((p) => Math.round(partOf(p.id) * 100)))];
   return parts.length === 1 ? `Ma part (${parts[0]} %)` : 'Ma part';
 }
+// Options pour les calculs d'associés d'un projet (immobilier ou entreprise)
+export const assocOpts = (p) => ({ memberships: S.memberships, ownerName: S.P.nom, amOwner: isMine(p) });
 export const projetOfLot = (lotNom) => { const l = S.data.lots.find((x) => x.nom === lotNom && isMine(x)) || S.data.lots.find((x) => x.nom === lotNom); return l ? l.projetId : ''; };
