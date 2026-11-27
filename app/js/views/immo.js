@@ -270,7 +270,7 @@ function openProjet(p = {}) {
   const err = h('div', { class: 'err' });
   const m = modal({ title: editing ? `Projet « ${p.nom} »` : 'Nouveau projet immobilier', width: 520,
     body: [field('Nom du projet', nom), h('div', { class: 'grid2' }, field('Ma part (%)', part, 'Ta quote-part : pondère le tableau de bord « Ma part »'), field('Devise', dev)), field('Note', note), err],
-    footer: [editing ? h('button', { class: 'btn danger', onClick: async () => { if (await confirmBox(`Supprimer le projet « ${p.nom} » ? (Possible seulement s’il ne contient plus de lots.)`, { ok: 'Supprimer', danger: true })) { if (await ops([del('projet', p.id)], 'Projet supprimé')) { S.immoProjet = ''; savePrefs(); m.close(); } } } }, icon('trash', 15), 'Supprimer') : null,
+    footer: [editing ? h('button', { class: 'btn danger', onClick: async () => { if (await confirmBox(`Supprimer le projet « ${p.nom} » ? Ses ${S.data.tx.filter((t) => t.projetId === p.id).length} opérations ne seront plus prises en compte dans les calculs. (Possible seulement s’il ne contient plus de lots.)`, { ok: 'Supprimer', danger: true })) { if (await ops([del('projet', p.id)], 'Projet supprimé')) { S.immoProjet = ''; savePrefs(); m.close(); } } } }, icon('trash', 15), 'Supprimer') : null,
       h('span', { class: 'sp' }), h('button', { class: 'btn', onClick: () => m.close() }, 'Annuler'),
       h('button', { class: 'btn primary lg', onClick: async () => {
         if (!nom.value.trim()) { err.textContent = 'Nom obligatoire.'; return; }
