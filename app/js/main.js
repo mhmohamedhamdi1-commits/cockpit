@@ -1,5 +1,5 @@
 import { h, icon, clear, monthLabel, monthLong, addMonths, monthNames, monthShort } from './util.js';
-import { S, load, loadPrefs, savePrefs, subscribe, emit, reload, setPeriod, setActivity, startSync, flush, wipeLocal, stopSync } from './state.js';
+import { S, load, loadPrefs, savePrefs, subscribe, emit, reload, setPeriod, setActivity, startSync, flush, wipeLocal, stopSync, partLabel } from './state.js';
 import { segmented, popover, toast, modal } from './ui.js';
 import { ensureAuth, watchRecovery, logout } from './auth.js';
 import { sb } from './supa.js';
@@ -171,7 +171,8 @@ function renderTop() {
   const title = h('h1', null, meta.title || r.label, meta.sub ? h('span', { class: 'sub' }, meta.sub) : null);
   refs.top.append(title);
   if (meta.immoToggle) {
-    refs.top.append(segmented([{ value: 'mine', label: `Ma part (${Math.round(S.P.part * 100)} %)` }, { value: 'full', label: 'Projet 100 %' }], S.immoView, (v) => { S.immoView = v; savePrefs(); emit(); }));
+    const pid = S.immoProjet && (S.data.projets || []).some((p) => p.id === S.immoProjet) ? S.immoProjet : '';
+    refs.top.append(segmented([{ value: 'mine', label: partLabel(pid) }, { value: 'full', label: 'Total (100 %)' }], S.immoView, (v) => { S.immoView = v; savePrefs(); emit(); }));
   }
   if (meta.activity) {
     refs.top.append(segmented([{ value: 'Tout', label: 'Tout' }, { value: 'Perso', label: 'Perso', dot: 'bg-Perso' }, { value: 'Freelance', label: 'Freelance', dot: 'bg-Freelance' }, { value: 'Immobilier', label: 'Immobilier', dot: 'bg-Immobilier' }], S.activity, setActivity));

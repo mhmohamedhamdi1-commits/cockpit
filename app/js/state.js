@@ -405,11 +405,21 @@ export function membershipOf(projetId) {
   return S.memberships.find((m) => m.projet_id === projetId && m.user_id === (S.user && S.user.id) && m.status === 'actif');
 }
 // Ma part d'un projet : la part du propriétaire si c'est le mien, sinon celle fixée dans mon invitation
+// (plus de part globale : une opération sans projet prend la part de mon unique projet s'il n'y en a qu'un, sinon 100 %)
 export function partOf(projetId) {
-  if (!projetId) return S.P.part;
-  const p = (S.data.projets || []).find((x) => x.id === projetId);
-  if (p && isMine(p)) return p.part;
+  const p = projetId && (S.data.projets || []).find((x) => x.id === projetId);
+  if (!projetId || !p) {
+    const own = (S.data.projets || []).filter(isMine);
+    return own.length === 1 ? Number(own[0].part) : 1;
+  }
+  if (isMine(p)) return Number(p.part);
   const m = membershipOf(projetId);
-  return m ? Number(m.part) : (p ? p.part : S.P.part);
+  return m ? Number(m.part) : Number(p.part);
+}
+// Libellé du bouton « Ma part » : la part du projet affiché, ou rien quand plusieurs projets ont des parts différentes
+export function partLabel(projetId) {
+  if (projetId) return `Ma part (${Math.round(partOf(projetId) * 100)} %)`;
+  const parts = [...new Set(projetsVisibles().map((p) => Math.round(partOf(p.id) * 100)))];
+  return parts.length === 1 ? `Ma part (${parts[0]} %)` : 'Ma part';
 }
 export const projetOfLot = (lotNom) => { const l = S.data.lots.find((x) => x.nom === lotNom && isMine(x)) || S.data.lots.find((x) => x.nom === lotNom); return l ? l.projetId : ''; };
