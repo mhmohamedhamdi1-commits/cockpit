@@ -17,6 +17,9 @@ const ownProjets = () => (S.data.projets || []).filter(isMine);
 export function badge() { return 0; }
 
 const toMad = (t) => (t.devise === 'MAD' ? t.montant : t.montantEur / S.P.taux);
+// « Ma part » : chaque montant est pondéré par la part de SON projet (aucune part globale) ; « Total » : 100 %
+const wOf = (projetId) => (S.immoView === 'full' ? 1 : partOf(projetId));
+const madW = (t) => toMad(t) * wOf(t.projetId);
 const shortLot = (l) => l.replace(/^\d+\.\s*/, '');
 const lotCode = (l) => (l.match(/^(\d+)\./) || [, ''])[1];
 const showOld = { v: false };
@@ -132,22 +135,21 @@ export function render() {
   const P = curProjet(), ro = P && !isMine(P);
   const lots = scopeLots();
   const list = txs({ activity: 'Immobilier' }).filter((t) => inScope(t.projetId));
-  const loyers = sum(list.filter((t) => t.categorie === 'Loyer' && t.sens === 'Revenu'), toMad);
-  const charges = sum(list.filter((t) => t.categorie === 'Charges refacturées' && t.sens === 'Revenu'), toMad);
-  const revC = sum(list.filter((t) => t.nature === 'Courant' && t.sens === 'Revenu'), toMad), depC = sum(list.filter((t) => t.nature === 'Courant' && t.sens === 'Dépense'), toMad);
+  const loyers = sum(list.filter((t) => t.categorie === 'Loyer' && t.sens === 'Revenu'), madW);
+  const charges = sum(list.filter((t) => t.categorie === 'Charges refacturées' && t.sens === 'Revenu'), madW);
+  const revC = sum(list.filter((t) => t.nature === 'Courant' && t.sens === 'Revenu'), madW), depC = sum(list.filter((t) => t.nature === 'Courant' && t.sens === 'Dépense'), madW);
   const res = revC - depC;
-  const share = S.immoView === 'mine' ? (P ? partOf(P.id) : S.P.part) : 1;
   // occupation
   const occ = lots.filter((l) => rentCell(l.nom, cur).tenant).length;
   // impayés sur la période
   const months = monthsBetween(S.period.from, S.period.to).filter((m) => m <= cur);
   let unpaid = 0, unpaidN = 0, expectedTot = 0;
-  for (const l of lots) for (const m of months) { const c = rentCell(l.nom, m); expectedTot += c.expected; if (c.status === 'late' || c.status === 'part' || (c.status === 'due')) { unpaid += c.expected - c.paid; unpaidN++; } }
+  for (const l of lots) for (const m of months) { const c = rentCell(l.nom, m); expectedTot += c.expected; if (c.status === 'late' || c.status === 'part' || (c.status === 'due')) { unpaid += (c.expected - c.paid) * wOf(l.projetId); unpaidN++; } }
   const kpis = h('div', { class: 'kpis' },
     kpi({ title: 'Loyers encaissés', ic: 'building', value: mad(loyers), sub: [h('span', null, `+ ${mad(charges)} de charges refacturées`)] }),
     kpi({ title: 'Taux d’occupation', ic: 'key', value: `${occ} / ${lots.length}`, sub: [h('span', { class: 'delta ' + (occ === lots.length ? 'good' : 'bad') }, pct(lots.length ? occ / lots.length : 0)), h('span', null, 'lots loués aujourd’hui')] }),
     kpi({ title: 'Loyers à récupérer', ic: 'alert', value: h('span', { class: unpaid > 0 ? 'neg' : 'pos' }, mad(unpaid)), sub: [unpaid > 0 ? h('span', null, `${unpaidN} loyer${unpaidN > 1 ? 's' : ''} manquant${unpaidN > 1 ? 's' : ''} sur la période`) : h('span', { class: 'delta good' }, 'Tout est encaissé')] }),
-    kpi({ title: 'Résultat d’exploitation', ic: 'wallet', value: h('span', { class: res >= 0 ? '' : 'neg' }, (res > 0 ? '+' : '') + mad(res)), sub: [h('span', null, `≈ ${eur(res * S.P.taux * share)}${S.immoView === 'mine' ? ' (ma part)' : ''}`)] }));
+    kpi({ title: 'Résultat d’exploitation', ic: 'wallet', value: h('span', { class: res >= 0 ? '' : 'neg' }, (res > 0 ? '+' : '') + mad(res)), sub: [h('span', null, `≈ ${eur(res * S.P.taux)}${S.immoView === 'mine' ? ' (ma part)' : ''}`)] }));
 
   // grille des loyers
   const allMonths = monthsBetween(S.period.from, S.period.to);
@@ -194,18 +196,18 @@ export function render() {
 
   // dépenses du projet
   const m = new Map();
-  for (const t of list) if (t.nature === 'Courant' && t.sens === 'Dépense') m.set(t.categorie, (m.get(t.categorie) || 0) + toMad(t));
+  for (const t of list) if (t.nature === 'Courant' && t.sens === 'Dépense') m.set(t.categorie, (m.get(t.categorie) || 0) + madW(t));
   const dep = [...m.entries()].sort((a, b) => b[1] - a[1]);
   const depCard = h('div', { class: 'card' }, h('header', null, h('h2', null, 'Charges d’exploitation'), h('span', { class: 'sub' }, 'sur la période')),
     dep.length ? barList(dep.map(([l, v]) => ({ label: l, value: v })), { fmt: mad, total: depC }) : empty('Aucune charge', ''));
 
   // projet en chiffres (toutes périodes)
   const all = S.data.tx.filter((t) => t.activite === 'Immobilier' && inScope(t.projetId));
-  const invNet = sum(all.filter((t) => t.nature === 'Investissement'), (t) => (t.sens === 'Dépense' ? 1 : -1) * toMad(t));
-  const treso = sum(all, (t) => (t.sens === 'Revenu' ? 1 : -1) * toMad(t));
-  const debt = sum(all.filter((t) => t.categorie === 'Prêt reçu'), toMad) - sum(all.filter((t) => t.categorie === 'Remboursement prêt'), toMad);
+  const invNet = sum(all.filter((t) => t.nature === 'Investissement'), (t) => (t.sens === 'Dépense' ? 1 : -1) * madW(t));
+  const treso = sum(all, (t) => (t.sens === 'Revenu' ? 1 : -1) * madW(t));
+  const debt = sum(all.filter((t) => t.categorie === 'Prêt reçu'), madW) - sum(all.filter((t) => t.categorie === 'Remboursement prêt'), madW);
   const since = addMonths(cur, -11) + '-01';
-  const loy12 = sum(all.filter((t) => t.categorie === 'Loyer' && t.sens === 'Revenu' && t.date >= since), toMad);
+  const loy12 = sum(all.filter((t) => t.categorie === 'Loyer' && t.sens === 'Revenu' && t.date >= since), madW);
   const stat = (l, v, s) => h('div', null, h('div', { class: 'muted', style: { fontSize: '12px', fontWeight: 650 } }, l), h('div', { class: 'num', style: { fontSize: '20px', fontWeight: 700 } }, v), s ? h('div', { class: 'muted num', style: { fontSize: '12px' } }, s) : null);
   const projCard = h('div', { class: 'card' }, h('header', null, h('h2', null, 'Le projet en chiffres'), h('span', { class: 'sub' }, 'depuis l’acquisition')),
     h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '18px' } },
@@ -251,12 +253,12 @@ function projectCard(p) {
   const cur = todayMonth();
   const occ = lots.filter((l) => rentCell(l.nom, cur).tenant).length;
   const since = addMonths(cur, -11);
-  const loy12 = sum(S.data.tx.filter((t) => t.projetId === p.id && t.categorie === 'Loyer' && t.sens === 'Revenu' && t.date.slice(0, 7) >= since), toMad);
+  const loy12 = sum(S.data.tx.filter((t) => t.projetId === p.id && t.categorie === 'Loyer' && t.sens === 'Revenu' && t.date.slice(0, 7) >= since), madW);
   const invited = isMine(p) ? S.memberships.filter((x) => x.projet_id === p.id).length : 0;
   return h('div', { class: 'pcard', onClick: () => { S.immoProjet = p.id; savePrefs(); emit(); } },
     h('div', { class: 'split' }, h('b', null, p.nom), isMine(p) ? (invited ? h('span', { class: 'pill info' }, icon('user', 12), `${invited} invité${invited > 1 ? 's' : ''}`) : null) : h('span', { class: 'pill mute' }, 'partagé · lecture seule')),
     h('div', { class: 'muted' }, `${lots.length} lot${lots.length > 1 ? 's' : ''} · ${occ}/${lots.length} loués · ma part ${Math.round(partOf(p.id) * 100)} %`),
-    h('div', { class: 'num', style: { fontWeight: 700, fontSize: '18px', marginTop: '6px' } }, mad(loy12), h('span', { class: 'muted', style: { fontSize: '12px', fontWeight: 500 } }, ' de loyers sur 12 mois')));
+    h('div', { class: 'num', style: { fontWeight: 700, fontSize: '18px', marginTop: '6px' } }, mad(loy12), h('span', { class: 'muted', style: { fontSize: '12px', fontWeight: 500 } }, S.immoView === 'full' ? ' de loyers sur 12 mois' : ' de loyers sur 12 mois (ma part)')));
 }
 
 function openProjet(p = {}) {

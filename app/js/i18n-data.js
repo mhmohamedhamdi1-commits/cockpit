@@ -2028,6 +2028,14 @@ export const DICT = {
 "Project 100%",
 "المشروع 100 %"
 ],
+"Total (100 %)": [
+"Total (100%)",
+"المجموع (100 %)"
+],
+"Ma part": [
+"My share",
+"حصتي"
+],
 "Projet créé": [
 "Project created",
 "تم إنشاء المشروع"
