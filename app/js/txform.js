@@ -1,11 +1,11 @@
-import { h, clear, icon, eur, parseAmount, norm, addDays, fmtDate } from './util.js';
-import { S, ops, upsert, del, catsFor, savePrefs, isMine, projetOfLot } from './state.js';
+import { h, clear, icon, eur, parseAmount, norm, addDays, fmtDate, CURRENCIES, curSym } from './util.js';
+import { S, ops, upsert, del, catsFor, savePrefs, isMine, projetOfLot, rateToEur } from './state.js';
 import { modal, segmented, field, select, confirmBox, toast } from './ui.js';
 import { activeTenants } from './calc.js';
 
 const ACTS = [
   { value: 'Perso', label: 'Perso', dot: 'bg-Perso' },
-  { value: 'Freelance', label: 'Freelance', dot: 'bg-Freelance' },
+  { value: 'Entreprise', label: 'Entreprise', dot: 'bg-Entreprise' },
   { value: 'Immobilier', label: 'Immobilier', dot: 'bg-Immobilier' },
 ];
 
@@ -54,9 +54,9 @@ export function openTxForm(initial = {}, { onSaved } = {}) {
   // --- éléments
   const sensSeg = segmented([{ value: 'Dépense', label: 'Dépense' }, { value: 'Revenu', label: 'Revenu' }], f.sens, (v) => { f.sens = v; if (!editing || f.categorie !== origCat) f.categorie = ''; showAll = false; renderCats(); renderExtras(); }, 'lg block');
   const amountIn = h('input', { class: 'amount num', type: 'text', inputmode: 'decimal', placeholder: '0', value: f.montant ? String(f.montant).replace('.', ',') : '', autofocus: true, 'aria-label': 'Montant' });
-  const devSeg = segmented([{ value: 'EUR', label: '€' }, { value: 'MAD', label: 'MAD' }], f.devise, (v) => { f.devise = v; deviseTouched = true; f.taux = 0; conv(); }, 'lg');
+  const devSeg = segmented(CURRENCIES.map((c) => ({ value: c.code, label: c.sym })), f.devise, (v) => { f.devise = v; deviseTouched = true; f.taux = 0; conv(); }, 'lg');
   const convEl = h('div', { class: 'muted num', style: { fontSize: '12.5px', minHeight: '18px', marginTop: '-8px' } });
-  const conv = () => { const v = parseAmount(amountIn.value); convEl.textContent = f.devise === 'MAD' && v ? `≈ ${eur(v * (f.taux || S.P.taux), 2)} (1 MAD = ${(f.taux || S.P.taux).toFixed(4).replace('.', ',')} €)` : ''; };
+  const conv = () => { const v = parseAmount(amountIn.value); const tx = f.taux || rateToEur(f.devise); convEl.textContent = f.devise !== 'EUR' && v ? `≈ ${eur(v * tx, 2)} (1 ${f.devise} = ${tx.toFixed(4).replace('.', ',')} €)` : ''; };
   amountIn.addEventListener('input', conv);
   const actSeg = segmented(ACTS, f.activite, (v) => { f.activite = v; if (!deviseTouched) { f.devise = defDevise(); devSeg.set(f.devise); } if (!editing) f.categorie = ''; f.tiers = ''; f.lot = ''; renderCats(); renderExtras(); conv(); }, 'block');
   const catsBox = h('div'); const extras = h('div', { class: 'grid2' });
@@ -117,7 +117,7 @@ export function openTxForm(initial = {}, { onSaved } = {}) {
       const det = h('input', { type: 'text', value: f.detail, placeholder: f.categorie === 'Travaux' ? 'ex. Maçonnerie, Plomberie…' : 'Précision (facultatif)' });
       det.addEventListener('input', () => { f.detail = det.value; });
       extras.append(projs.length ? h('div', { style: { gridColumn: '1 / -1' } }, field('Projet', projSel)) : null, field('Lot concerné', lotSel), field('Locataire', tenSel), h('div', { style: { gridColumn: '1 / -1' } }, field('Détail', det)));
-    } else if (f.activite === 'Freelance') {
+    } else if (f.activite === 'Entreprise') {
       const cl = [{ value: '', label: '— Aucun —' }, ...S.data.clients.map((c) => ({ value: c.nom, label: c.nom }))];
       const sel = select(cl, f.tiers);
       sel.addEventListener('change', () => { f.tiers = sel.value; });
@@ -146,7 +146,7 @@ export function openTxForm(initial = {}, { onSaved } = {}) {
     if (!sugs.length) return closeSug();
     clear(sugBox);
     sugs.forEach((e, i) => sugBox.append(h('div', { class: i === sel ? 'on' : '', onMousedown: (ev) => { ev.preventDefault(); pick(e); } },
-      h('span', null, e.libelle, h('small', null, `  ${e.t.categorie}`)), h('small', { class: 'num' }, `${String(e.t.montant).replace('.', ',')} ${e.t.devise === 'MAD' ? 'MAD' : '€'}`))));
+      h('span', null, e.libelle, h('small', null, `  ${e.t.categorie}`)), h('small', { class: 'num' }, `${String(e.t.montant).replace('.', ',')} ${curSym(e.t.devise)}`))));
     sugBox.style.display = 'block'; sel = -1;
   });
   libIn.addEventListener('keydown', (ev) => {
@@ -175,7 +175,7 @@ export function openTxForm(initial = {}, { onSaved } = {}) {
     };
     if (initial.periode && !editing) item.periode = initial.periode;
     S.lastActivity = f.activite; savePrefs();
-    if (await ops([upsert('tx', item)], editing ? 'Opération modifiée' : `${f.sens === 'Dépense' ? 'Dépense' : 'Revenu'} de ${eur(v, v % 1 ? 2 : 0).replace('€', f.devise === 'MAD' ? 'MAD' : '€')} enregistré`)) {
+    if (await ops([upsert('tx', item)], editing ? 'Opération modifiée' : `${f.sens === 'Dépense' ? 'Dépense' : 'Revenu'} de ${eur(v, v % 1 ? 2 : 0).replace('€', curSym(f.devise))} enregistré`)) {
       onSaved && onSaved();
       if (another) {
         amountIn.value = ''; libIn.value = ''; f.libelle = ''; f.detail = ''; conv(); renderExtras(); amountIn.focus();

@@ -1,12 +1,12 @@
-import { h, icon, eur, money, pct, fmtDate, sum, clear, monthLabel, parseAmount, num2 } from '../util.js';
-import { S, ops, upsert, del } from '../state.js';
+import { h, icon, eur, money, pct, fmtDate, sum, clear, monthLabel, parseAmount, num2, CUR_CODES, curSym } from '../util.js';
+import { S, ops, upsert, del, rateToEur } from '../state.js';
 import { lineChart } from '../charts.js';
 import { modal, field, select, confirmBox, empty, toast } from '../ui.js';
 import { kpi, delta } from './common.js';
 
 export function meta() { return { title: 'Patrimoine', sub: 'Soldes de tes comptes à chaque relevé', immoToggle: false }; }
 
-const rate = (cur) => (cur === 'MAD' ? S.P.taux : 1);
+const rate = (cur) => rateToEur(cur);
 function byDate() {
   const m = new Map();
   for (const s of S.data.snapshots) { const e = m.get(s.date) || { date: s.date, total: 0, items: new Map() }; e.total += s.soldeEur; e.items.set(s.compte, s); m.set(s.date, e); }
@@ -36,7 +36,7 @@ function openSnapshotForm() {
     if (await ops(list, 'Relevé enregistré')) m.close();
   };
   const m = modal({ title: 'Nouveau relevé de soldes', sub: 'Laisse vide un compte inchangé : le dernier solde est reporté', width: 560,
-    body: [field('Date du relevé', date), h('table', { class: 'tbl' }, h('tbody', null, inputs.map((x) => h('tr', null, h('td', null, x.a.nom, h('span', { class: 'sub' }, `${x.a.dispo === 'Oui' ? 'Disponible' : 'Bloqué / placé'}${x.last ? ` · dernier : ${money(x.last.solde, x.a.devise, 2)}` : ''}`)), h('td', { style: { width: '170px' } }, x.el), h('td', { class: 'muted', style: { width: '42px' } }, x.a.devise === 'MAD' ? 'MAD' : '€')))))],
+    body: [field('Date du relevé', date), h('table', { class: 'tbl' }, h('tbody', null, inputs.map((x) => h('tr', null, h('td', null, x.a.nom, h('span', { class: 'sub' }, `${x.a.dispo === 'Oui' ? 'Disponible' : 'Bloqué / placé'}${x.last ? ` · dernier : ${money(x.last.solde, x.a.devise, 2)}` : ''}`)), h('td', { style: { width: '170px' } }, x.el), h('td', { class: 'muted', style: { width: '42px' } }, curSym(x.a.devise))))))],
     footer: [h('span', null, 'Total : ', tot), h('span', { class: 'sp' }), h('button', { class: 'btn', onClick: () => m.close() }, 'Annuler'), h('button', { class: 'btn primary lg', onClick: go }, 'Enregistrer le relevé')] });
 }
 
@@ -49,7 +49,7 @@ function openAccounts() {
     box.append(h('table', { class: 'tbl' }, h('thead', null, h('tr', null, h('th', null, 'Compte'), h('th', null, 'Devise'), h('th', null, 'Disponible ?'), h('th', null))),
       h('tbody', null, rows.map((r, i) => {
         const n = h('input', { type: 'text', value: r.nom, placeholder: 'Nom du compte' }); n.addEventListener('input', () => { r.nom = n.value; });
-        const d = select(['EUR', 'MAD'], r.devise); d.addEventListener('change', () => { r.devise = d.value; });
+        const d = select(CUR_CODES, r.devise); d.addEventListener('change', () => { r.devise = d.value; });
         const v = select([{ value: 'Oui', label: 'Oui' }, { value: 'Non', label: 'Non (bloqué / placé)' }], r.dispo); v.addEventListener('change', () => { r.dispo = v.value; });
         return h('tr', null, h('td', null, n), h('td', { style: { width: '90px' } }, d), h('td', { style: { width: '190px' } }, v),
           h('td', null, h('button', { class: 'btn sm ghost danger', onClick: () => { if (r.id) removed.push(r.id); rows.splice(i, 1); draw(); } }, icon('trash', 14))));

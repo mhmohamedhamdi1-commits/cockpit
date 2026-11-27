@@ -107,7 +107,7 @@ await step('Connexion mot de passe + code MFA (iPhone)', async () => { await log
 
 await step('Les 7 écrans s’affichent sans erreur avec les vraies données (PC + iPhone)', async () => {
   for (const d of [A, B]) {
-    for (const r of ['dashboard', 'ops', 'freelance', 'immo', 'wealth', 'recurring', 'settings']) {
+    for (const r of ['dashboard', 'ops', 'entreprise', 'immo', 'wealth', 'recurring', 'settings']) {
       await d.page.goto(`${APP}/#/${r}`);
       await d.page.waitForSelector('.page .card');
       assert.equal(await d.page.$('.page pre'), null, `${d.name} ${r} : erreur d'affichage`);

@@ -4,7 +4,7 @@ import { freelanceYear, microYear } from '../calc.js';
 import { modal, field, select, confirmBox, empty, pill, toast, segmented } from '../ui.js';
 import { kpi } from './common.js';
 
-export function meta() { return { title: 'Freelance', sub: 'Facturation, encaissements et plafonds', immoToggle: false }; }
+export function meta() { return { title: 'Entreprise', sub: 'Facturation, encaissements et plafonds', immoToggle: false }; }
 
 const st = { year: null };
 const inP = (m) => m >= S.period.from && m <= S.period.to;
@@ -17,7 +17,7 @@ export async function sendInvoice(i) { await ops([upsert('invoice', { ...i, stat
 export function payInvoice(i) {
   const d = h('input', { type: 'date', value: S.today });
   const go = async () => {
-    const base = { date: d.value, activite: 'Freelance', sens: 'Revenu', devise: i.devise, tiers: i.client, periode: i.periode, nature: 'Courant' };
+    const base = { date: d.value, activite: 'Entreprise', sens: 'Revenu', devise: i.devise, tiers: i.client, periode: i.periode, nature: 'Courant' };
     const list = [upsert('invoice', { ...i, statut: 'Payée', paiement: d.value, emission: i.emission || d.value }),
       upsert('tx', { ...base, categorie: 'Prestations', libelle: `Facture ${i.numero} — ${i.client}`, montant: i.ht, ref: `FAC${i.id}` })];
     if (i.ttc - i.ht > 0.005) list.push(upsert('tx', { ...base, categorie: 'TVA collectée', libelle: `TVA facture ${i.numero}`, montant: i.ttc - i.ht, nature: 'Financement', ref: `FACTVA${i.id}` }));
@@ -134,7 +134,7 @@ export function render() {
   return [kpis, plafCard, facCard, cliCard];
 }
 
-// Ouverture depuis une notification : #/freelance?inv=<id> ou ?jours=AAAA-MM
+// Ouverture depuis une notification : #/entreprise?inv=<id> ou ?jours=AAAA-MM
 export function onArgs(a) {
   if (a.inv) { const i = S.data.invoices.find((x) => x.id === a.inv); if (i) openInvoiceForm(i); }
   else if (a.jours) {

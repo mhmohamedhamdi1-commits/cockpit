@@ -42,6 +42,7 @@ before(async () => {
   await db.exec(readFileSync(new URL('../supabase/migrations/0004_accounts.sql', import.meta.url), 'utf8'));
   await db.exec(readFileSync(new URL('../supabase/migrations/0005_projets.sql', import.meta.url), 'utf8'));
   await db.exec(readFileSync(new URL('../supabase/migrations/0006_bourse.sql', import.meta.url), 'utf8'));
+  await db.exec(readFileSync(new URL('../supabase/migrations/0007_v3.sql', import.meta.url), 'utf8'));
   await as(A);
   await ops([
     { e: 'param', item: { cle: 'taux_mad_eur', valeur: '0.1' } },
@@ -262,8 +263,8 @@ test('nouvel inscrit : base de départ créée automatiquement, isolée des autr
   await q(`insert into auth.users values ('${C}')`);
   await as(C);
   const [c] = await q('select (select count(*)::int from categories) cats, (select count(*)::int from params) params, (select count(*)::int from accounts) accs, (select count(*)::int from tx) tx');
-  assert.equal(c.cats, 71);
-  assert.equal(c.params, 22);
+  assert.equal(c.cats, 88);
+  assert.equal(c.params, 27);
   assert.equal(c.accs, 2);
   assert.equal(c.tx, 0, 'aucune donnée d\'un autre compte');
   assert.equal((await q(`select valeur from params where cle = 'nom'`))[0].valeur, '');

@@ -1,4 +1,4 @@
-import { h, icon, eur, mad, num0, pct, monthsBetween, monthShort, monthLong, monthEnd, addMonths, fmtDate, sum, clear } from '../util.js';
+import { h, icon, eur, mad, num0, pct, monthsBetween, monthShort, monthLong, monthEnd, addMonths, fmtDate, sum, clear, CUR_CODES } from '../util.js';
 import { S, ops, upsert, del, todayMonth, emit, savePrefs, isMine, projetsVisibles, membershipOf, partOf, projetOfLot } from '../state.js';
 import { sb } from '../supa.js';
 import { txs, rentCell, tenancyFor, activeTenants, summarize } from '../calc.js';
@@ -265,7 +265,7 @@ function openProjet(p = {}) {
   const editing = !!p.id;
   const nom = h('input', { type: 'text', value: p.nom || '', placeholder: 'ex. Immeuble Amal 1' });
   const part = h('input', { type: 'number', min: 0, max: 100, step: 1, value: Math.round((p.part ?? 1) * 100) });
-  const dev = select(['MAD', 'EUR'], p.devise || 'MAD');
+  const dev = select(CUR_CODES, p.devise || 'MAD');
   const note = h('textarea', null, p.note || '');
   const err = h('div', { class: 'err' });
   const m = modal({ title: editing ? `Projet « ${p.nom} »` : 'Nouveau projet immobilier', width: 520,

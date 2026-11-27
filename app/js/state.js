@@ -9,17 +9,19 @@ import { sb, deviceLabel } from './supa.js';
 import { TABLES, BY_KEY, BY_ENTITY, fromDb, toDb } from './schema.js';
 import { buildIndex } from './core.js';
 import { idbGet, idbSet, idbClear } from './idb.js';
-import { setDisplayCurrency } from './util.js';
+import { setDisplayCurrency, CUR_CODES } from './util.js';
 
 export const S = {
   data: null, today: '', file: 'Base Cockpit (cloud)', dir: '',
   period: { from: '', to: '' }, activity: 'Tout', immoView: 'mine', theme: 'auto', lastActivity: 'Perso',
-  P: {}, catMap: {}, lots: [],
+  P: {}, catMap: {}, lots: [], fx: {},   // fx : 1 devise = x EUR (USD, GBP, CHF ; le MAD vient du paramètre)
   route: 'dashboard', args: {},
   sync: { online: navigator.onLine, pending: 0, lastSync: null, syncing: false, error: '' },
   user: null,
   memberships: [],   // projets partagés : où je suis invité (lecteur) et mes invités
 };
+// Taux « 1 devise = x EUR » (sans date : taux courant)
+export const rateToEur = (cur) => (!cur || cur === 'EUR' ? 1 : cur === 'MAD' ? (S.P.taux || 0.093) : S.fx[cur] || 1);
 const listeners = new Set();
 export const subscribe = (f) => { listeners.add(f); return () => listeners.delete(f); };
 export const emit = () => listeners.forEach((f) => f());
@@ -50,7 +52,7 @@ function rebuild() {
   S.data = d;
   S.today = today();
   Object.assign(S, buildIndex(d));
-  setDisplayCurrency(S.displayCur || 'EUR', S.displayCur === 'MAD' ? 1 / S.P.taux : 1);
+  setDisplayCurrency(S.displayCur || 'EUR', 1 / rateToEur(S.displayCur || 'EUR'));
   S.sync.pending = outbox.length;
 }
 const persist = debounce(() => {
@@ -292,8 +294,8 @@ function applyLocal(batch) {
     const r = fromDb(def, { ...(cur ? toDb(def, cur) : {}), ...o.item, seq: cur ? cur.seq : 1e12, version: cur ? cur.version : 0 });
     r._pending = true;
     if (def.key === 'tx') {
-      r.devise = r.devise === 'MAD' ? 'MAD' : 'EUR';
-      r.taux = r.devise === 'EUR' ? 1 : (r.taux > 0 && r.taux !== 1 ? r.taux : S.P.taux);
+      r.devise = CUR_CODES.includes(r.devise) ? r.devise : 'EUR';
+      r.taux = r.devise === 'EUR' ? 1 : (r.taux > 0 && r.taux !== 1 ? r.taux : rateToEur(r.devise));
       r.montantEur = Math.round(r.montant * r.taux * 100) / 100;
       r.periode = r.periode || r.date.slice(0, 7);
       if (!r.nature) r.nature = (S.catMap[`${r.activite}|${r.sens}|${r.categorie}`] || {}).nature || 'Courant';
@@ -302,7 +304,7 @@ function applyLocal(batch) {
       r.ttc = Math.round(r.ht * (1 + r.tva) * 100) / 100;
       if (!r.numero) r.numero = '(en attente)';
     } else if (def.key === 'snapshots') {
-      r.soldeEur = Math.round(r.solde * (r.devise === 'MAD' ? S.P.taux : 1) * 100) / 100;
+      r.soldeEur = Math.round(r.solde * rateToEur(r.devise) * 100) / 100;
     }
     m.set(r.id, r);
   }
@@ -375,6 +377,14 @@ export async function startSync() {
 export async function stopSync() { if (channel) await sb.removeChannel(channel).catch(() => {}); }
 
 // ---------- chargement initial ----------
+// Taux de change du jour (USD, GBP, CHF) : table commune fx_rates
+export async function loadFx() {
+  try {
+    const { data } = await sb.from('fx_rates').select('pair,rate,date').in('pair', ['USD/EUR', 'GBP/EUR', 'CHF/EUR']).order('date', { ascending: false }).limit(60);
+    for (const r of data || []) { const c = r.pair.split('/')[0]; if (!S.fx[c]) S.fx[c] = Number(r.rate); }
+    rebuild();
+  } catch { /* hors ligne : la copie locale garde les derniers taux */ }
+}
 export async function load(userId) {
   const cached = await loadCache(userId);
   if (cached) {
@@ -383,6 +393,7 @@ export async function load(userId) {
     await pull();
     await flush();
   }
+  loadFx();
   if (!S.period.from) {
     const cur = S.today.slice(0, 7);
     S.period = { from: cur.slice(0, 4) + '-01', to: cur };

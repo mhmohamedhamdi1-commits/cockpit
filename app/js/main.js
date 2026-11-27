@@ -1,4 +1,4 @@
-import { h, icon, clear, monthLabel, monthLong, addMonths, monthNames, monthShort } from './util.js';
+import { h, icon, clear, monthLabel, monthLong, addMonths, monthNames, monthShort, CURRENCIES } from './util.js';
 import { S, load, loadPrefs, savePrefs, subscribe, emit, reload, setPeriod, setActivity, startSync, flush, wipeLocal, stopSync, partLabel } from './state.js';
 import { segmented, popover, toast, modal } from './ui.js';
 import { ensureAuth, watchRecovery, logout } from './auth.js';
@@ -10,7 +10,7 @@ import { setLang, LANGS } from './i18n.js';
 import { openTxForm } from './txform.js';
 import * as dashboard from './views/dashboard.js';
 import * as opsView from './views/ops.js';
-import * as freelance from './views/freelance.js';
+import * as entreprise from './views/entreprise.js';
 import * as immo from './views/immo.js';
 import * as wealth from './views/wealth.js';
 import * as recurring from './views/recurring.js';
@@ -20,7 +20,7 @@ import * as bourse from './views/bourse.js';
 const ROUTES = {
   dashboard: { label: 'Tableau de bord', ic: 'dash', v: dashboard },
   ops: { label: 'Opérations', ic: 'list', v: opsView },
-  freelance: { label: 'Freelance', ic: 'brief', v: freelance },
+  entreprise: { label: 'Entreprise', ic: 'brief', v: entreprise },
   immo: { label: 'Immobilier', ic: 'building', v: immo },
   wealth: { label: 'Patrimoine', ic: 'bank', v: wealth },
   bourse: { label: 'Bourse', ic: 'trend', v: bourse },
@@ -160,7 +160,7 @@ function renderNav() {
       h('button', { class: 'btn sm', title: 'Synchroniser maintenant', onClick: () => flush().then(() => toast('Synchronisé')) }, icon('repeat', 15)),
       h('button', { class: 'btn sm', title: 'Exporter toutes les données dans un fichier Excel', onClick: () => exportExcel() }, icon('sheet', 15), 'Excel'),
       h('button', { class: 'btn sm', title: S.theme === 'dark' ? 'Mode clair' : 'Mode sombre', onClick: () => { S.theme = (document.documentElement.dataset.theme === 'dark') ? 'light' : 'dark'; savePrefs(); applyTheme(); renderNav(); } }, icon(document.documentElement.dataset.theme === 'dark' ? 'sun' : 'moon', 15))),
-    h('div', { class: 'prefrow' }, prefSelect(LANGS, S.lang || 'fr', (v) => { S.lang = v; savePrefs(); setLang(v); emit(); }, 'Langue'), prefSelect([{ value: 'EUR', label: '€ EUR' }, { value: 'MAD', label: 'MAD' }], S.displayCur || 'EUR', (v) => { S.displayCur = v; savePrefs(); reload(); }, 'Devise d’affichage')),
+    h('div', { class: 'prefrow' }, prefSelect(LANGS, S.lang || 'fr', (v) => { S.lang = v; savePrefs(); setLang(v); emit(); }, 'Langue'), prefSelect(CURRENCIES.map((c) => ({ value: c.code, label: c.sym === c.code ? c.code : `${c.sym} ${c.code}` })), S.displayCur || 'EUR', (v) => { S.displayCur = v; savePrefs(); reload(); }, 'Devise d’affichage')),
     h('div', { class: 'userbox' }, icon('user', 16), h('span', { title: S.user ? S.user.email : '' }, S.user ? S.user.email : ''), h('button', { class: 'btn sm', onClick: logout, title: 'Se déconnecter' }, 'Déconnexion')));
   renderTabbar();
 }
@@ -175,7 +175,7 @@ function renderTop() {
     refs.top.append(segmented([{ value: 'mine', label: partLabel(pid) }, { value: 'full', label: 'Total (100 %)' }], S.immoView, (v) => { S.immoView = v; savePrefs(); emit(); }));
   }
   if (meta.activity) {
-    refs.top.append(segmented([{ value: 'Tout', label: 'Tout' }, { value: 'Perso', label: 'Perso', dot: 'bg-Perso' }, { value: 'Freelance', label: 'Freelance', dot: 'bg-Freelance' }, { value: 'Immobilier', label: 'Immobilier', dot: 'bg-Immobilier' }], S.activity, setActivity));
+    refs.top.append(segmented([{ value: 'Tout', label: 'Tout' }, { value: 'Perso', label: 'Perso', dot: 'bg-Perso' }, { value: 'Entreprise', label: 'Entreprise', dot: 'bg-Entreprise' }, { value: 'Immobilier', label: 'Immobilier', dot: 'bg-Immobilier' }], S.activity, setActivity));
   }
   if (meta.period !== false) {
     const b = h('button', { class: 'pillbtn', type: 'button', onClick: () => openPeriod(b) }, icon('calendar', 17), periodText(), icon('right', 14));
@@ -211,7 +211,7 @@ function route() {
   const [k0, qs0] = (location.hash || '#/dashboard').replace('#/', '').split('?');
   if (k0 === 'invitation') { const code = new URLSearchParams(qs0 || '').get('i'); if (code) { acceptInvitation(code); return; } }
   const [k, qs] = (location.hash || '#/dashboard').replace('#/', '').split('?');
-  S.route = ROUTES[k] ? k : 'dashboard';
+  S.route = ROUTES[k] ? k : (k === 'freelance' ? 'entreprise' : 'dashboard');   // anciens liens (notifications) : Freelance -> Entreprise
   S.args = Object.fromEntries(new URLSearchParams(qs || ''));
   renderAll();
   refs.scroll.scrollTop = 0;

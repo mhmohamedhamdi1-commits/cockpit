@@ -14,7 +14,7 @@
   --accent-blue: #007aff;
   --hover: rgba(118, 118, 128, .10);
   --perso: #007aff;
-  --freelance: #ff9500;
+  --entreprise: #ff9500;
   --immo: #34c759;
   --flow-in: #34c759;
   --flow-out: #ff9500;
@@ -43,7 +43,7 @@
   --accent-blue: #0a84ff;
   --hover: rgba(118, 118, 128, .24);
   --perso: #0a84ff;
-  --freelance: #ff9f0a;
+  --entreprise: #ff9f0a;
   --immo: #30d158;
   --flow-in: #30d158;
   --flow-out: #ff9f0a;
@@ -195,7 +195,7 @@ textarea { resize: vertical; min-height: 70px; }
 
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 99px; background: var(--hover); font-size: 12.5px; font-weight: 550; color: var(--ink-2); white-space: nowrap; }
 .adot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; vertical-align: 1px; }
-.adot.Perso, .bg-Perso { background: var(--perso); } .adot.Freelance, .bg-Freelance { background: var(--freelance); } .adot.Immobilier, .bg-Immobilier { background: var(--immo); }
+.adot.Perso, .bg-Perso { background: var(--perso); } .adot.Entreprise, .bg-Entreprise { background: var(--entreprise); } .adot.Immobilier, .bg-Immobilier { background: var(--immo); }
 .pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 99px; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .pill.good { background: var(--good-bg); color: var(--good-ink); }
 .pill.warn { background: var(--warn-bg); color: var(--warn-ink); }

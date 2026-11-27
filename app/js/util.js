@@ -90,9 +90,16 @@ const fixMinus = (s) => s.replace('-', '\u2212').replace(/\u202f/g, '\u00a0');
 export const num0 = (v) => fixMinus(nf0.format(Math.round(v || 0)));
 export const num2 = (v) => fixMinus(nf2.format(v || 0));
 export const num1 = (v) => fixMinus(nf1.format(v || 0));
+// Devises gérées : EUR, MAD, USD (US), GBP (UK), CHF (Suisse)
+export const CURRENCIES = [
+  { code: 'EUR', sym: '€', label: 'EUR — Euro' }, { code: 'MAD', sym: 'MAD', label: 'MAD — Dirham marocain' },
+  { code: 'USD', sym: '$', label: 'USD — Dollar (US)' }, { code: 'GBP', sym: '£', label: 'GBP — Livre sterling (UK)' }, { code: 'CHF', sym: 'CHF', label: 'CHF — Franc suisse' },
+];
+export const CUR_CODES = CURRENCIES.map((c) => c.code);
+export const curSym = (cur) => (CURRENCIES.find((c) => c.code === cur) || { sym: cur }).sym;
 export function money(v, cur = 'EUR', dec = 0) {
   const n = dec === 2 ? num2(v) : num0(v);
-  return cur === 'EUR' ? `${n} €` : cur === 'USD' ? `${n} $` : `${n} ${cur}`;
+  return `${n}\u00a0${curSym(cur)}`;
 }
 // Devise d'affichage des montants en euros (EUR par défaut ; MAD = conversion au taux du jour)
 let DISPLAY = { cur: 'EUR', rate: 1 };

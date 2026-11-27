@@ -8,7 +8,7 @@
 do $$
 declare t text;
 begin
-  foreach t in array array['projets','projet_membres','ordres','tx','categories','lots','tenants','clients','invoices','recurring','accounts','snapshots','params','rappels'] loop
+  foreach t in array array['projets','projet_membres','ordres','tx','categories','lots','tenants','clients','invoices','recurring','accounts','snapshots','params','rappels','import_lignes','objectifs','fiscal','declarations'] loop
     if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
       execute format('alter publication supabase_realtime add table public.%I', t);
     end if;

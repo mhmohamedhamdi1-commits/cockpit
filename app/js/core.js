@@ -142,13 +142,13 @@ export function computeAlerts(ctx) {
   if (lateN) out.push({ id: 'loyers_retard', kind: 'bad', ic: 'alert', title: `${lateN} loyer${lateN > 1 ? 's' : ''} en retard`, sub: `${mad(lateAmt)} à récupérer sur les 3 derniers mois`, detail: lateList.slice(0, 4).join(', '), go: '#/immo', label: 'Voir' });
   if (dueN) out.push({ id: 'loyers_mois', kind: 'warn', ic: 'building', title: `${dueN} loyer${dueN > 1 ? 's' : ''} à encaisser en ${monthLong(cur).split(' ')[0]}`, sub: `${mad(dueAmt)} attendus ce mois-ci`, go: '#/immo', label: 'Encaisser' });
   const toSend = d.invoices.filter((i) => i.statut === 'Planifiée' && i.periode <= cur);
-  if (toSend.length) out.push({ id: 'factures_envoyer', kind: 'warn', ic: 'send', title: `${toSend.length} facture${toSend.length > 1 ? 's' : ''} à envoyer`, sub: toSend.slice(0, 3).map((i) => `${i.client.split(' ')[0]} ${monthLabel(i.periode)}`).join(' · '), go: '#/freelance', label: 'Voir' });
+  if (toSend.length) out.push({ id: 'factures_envoyer', kind: 'warn', ic: 'send', title: `${toSend.length} facture${toSend.length > 1 ? 's' : ''} à envoyer`, sub: toSend.slice(0, 3).map((i) => `${i.client.split(' ')[0]} ${monthLabel(i.periode)}`).join(' · '), go: '#/entreprise', label: 'Voir' });
   const unpaid = d.invoices.filter((i) => i.statut === 'Envoyée' && i.emission && daysBetween(i.emission, ctx.today) > 30);
-  if (unpaid.length) out.push({ id: 'factures_retard', kind: 'bad', ic: 'alert', title: `${unpaid.length} facture${unpaid.length > 1 ? 's' : ''} impayée${unpaid.length > 1 ? 's' : ''} depuis +30 j`, sub: unpaid.slice(0, 3).map((i) => `${i.numero} · ${i.client.split(' ')[0]}`).join(' · '), go: '#/freelance', label: 'Relancer' });
+  if (unpaid.length) out.push({ id: 'factures_retard', kind: 'bad', ic: 'alert', title: `${unpaid.length} facture${unpaid.length > 1 ? 's' : ''} impayée${unpaid.length > 1 ? 's' : ''} depuis +30 j`, sub: unpaid.slice(0, 3).map((i) => `${i.numero} · ${i.client.split(' ')[0]}`).join(' · '), go: '#/entreprise', label: 'Relancer' });
   const y = String(microYear(ctx)), fy = freelanceYear(ctx, y), done = fy.paid + fy.billed;
-  if (done >= fy.tvaMaj) out.push({ id: 'seuil_tva_maj', kind: 'bad', ic: 'alert', title: 'Seuil majoré de TVA dépassé', sub: `${eur(done)} de CA ${y} : la TVA est due dès maintenant (seuil ${eur(fy.tvaMaj)})`, go: '#/freelance', label: 'Voir' });
-  else if (done >= fy.tva) out.push({ id: 'seuil_tva', kind: 'warn', ic: 'alert', title: 'Franchise de TVA dépassée', sub: `${eur(done)} de CA ${y} (seuil ${eur(fy.tva)}) : TVA due au 1er janvier`, go: '#/freelance', label: 'Voir' });
-  else if (fy.total > fy.micro) out.push({ id: 'seuil_micro', kind: 'info', ic: 'info', title: `Plafond micro ${y} dépassé en projection`, sub: `${eur(fy.total)} planifiés vs ${eur(fy.micro)} de plafond`, go: '#/freelance', label: 'Détails' });
+  if (done >= fy.tvaMaj) out.push({ id: 'seuil_tva_maj', kind: 'bad', ic: 'alert', title: 'Seuil majoré de TVA dépassé', sub: `${eur(done)} de CA ${y} : la TVA est due dès maintenant (seuil ${eur(fy.tvaMaj)})`, go: '#/entreprise', label: 'Voir' });
+  else if (done >= fy.tva) out.push({ id: 'seuil_tva', kind: 'warn', ic: 'alert', title: 'Franchise de TVA dépassée', sub: `${eur(done)} de CA ${y} (seuil ${eur(fy.tva)}) : TVA due au 1er janvier`, go: '#/entreprise', label: 'Voir' });
+  else if (fy.total > fy.micro) out.push({ id: 'seuil_micro', kind: 'info', ic: 'info', title: `Plafond micro ${y} dépassé en projection`, sub: `${eur(fy.total)} planifiés vs ${eur(fy.micro)} de plafond`, go: '#/entreprise', label: 'Détails' });
   for (const m of [cur, ...(+ctx.today.slice(8, 10) >= 25 ? [addMonths(cur, 1)] : [])]) {
     const miss = missingRecurring(ctx, m);
     if (miss.length) out.push({ id: 'recurrents:' + m, kind: 'info', ic: 'repeat', title: `${miss.length} opération${miss.length > 1 ? 's' : ''} récurrente${miss.length > 1 ? 's' : ''} à générer`, sub: `pour ${monthLong(m)}`, action: { key: 'generate_recurring', month: m }, label: 'Générer' });
@@ -163,7 +163,7 @@ export function computeAlerts(ctx) {
 
 // =====================================================================================
 // Trésorerie actuelle : cumul de TOUS les flux (courants, investissements, financements)
-// depuis la première opération. Perso + Freelance = compte en France ; chaque projet a la sienne.
+// depuis la première opération. Perso = compte en France ; chaque projet a la sienne.
 // =====================================================================================
 export function cashPosition(ctx, { partOf = () => 1, isMine = () => true } = {}) {
   const toMadV = (t) => (t.devise === 'MAD' ? t.montant : t.montantEur / ctx.P.taux);

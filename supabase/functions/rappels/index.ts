@@ -83,9 +83,9 @@ async function compute(uid: string, now: ReturnType<typeof paris>, forceHour?: n
   if (morning) {
     if (P.notif('factures')) {
       const late = byId('factures_retard');
-      if (late) notes.push({ key: `factures_retard:${week}`, title: late.title, body: `${late.sub}. Pense à relancer.`, url: '/#/freelance', tag: 'factures' });
+      if (late) notes.push({ key: `factures_retard:${week}`, title: late.title, body: `${late.sub}. Pense à relancer.`, url: '/#/entreprise', tag: 'factures' });
       const toSend = data.invoices.filter((i: any) => i.statut === 'Planifiée' && i.periode < month);
-      if (toSend.length) notes.push({ key: `factures_envoyer:${week}`, title: `${toSend.length} facture${toSend.length > 1 ? 's' : ''} à envoyer`, body: toSend.slice(0, 3).map((i: any) => `${i.client} — ${monthLabel(i.periode)}`).join(' · '), url: '/#/freelance', tag: 'factures-envoi' });
+      if (toSend.length) notes.push({ key: `factures_envoyer:${week}`, title: `${toSend.length} facture${toSend.length > 1 ? 's' : ''} à envoyer`, body: toSend.slice(0, 3).map((i: any) => `${i.client} — ${monthLabel(i.periode)}`).join(' · '), url: '/#/entreprise', tag: 'factures-envoi' });
     }
     if (P.notif('loyers')) {
       const lateDay = Math.round(P.notifNum('loyer_jour', 5));
@@ -118,13 +118,13 @@ async function compute(uid: string, now: ReturnType<typeof paris>, forceHour?: n
     }
     for (const id of ['seuil_tva_maj', 'seuil_tva', 'seuil_micro']) {
       const a = byId(id);
-      if (a) notes.push({ key: `${id}:${month}`, title: a.title, body: a.sub, url: '/#/freelance', tag: 'seuils' });
+      if (a) notes.push({ key: `${id}:${month}`, title: a.title, body: a.sub, url: '/#/entreprise', tag: 'seuils' });
     }
     if (P.notif('provision')) {
       const since = new Date(Date.now() - 3 * 864e5).toISOString().slice(0, 10);
       for (const t of data.tx as any[]) {
         if (!/^FAC[0-9a-f-]+$/.test(t.ref) || t.date < since) continue;
-        notes.push({ key: `provision:${t.ref}`, title: 'Facture payée : mets de côté', body: `${t.libelle} : mets ${eur(t.montantEur * P.provision)} de côté (${Math.round(P.provision * 100)} % pour cotisations et impôt).`, url: '/#/freelance', tag: 'provision' });
+        notes.push({ key: `provision:${t.ref}`, title: 'Facture payée : mets de côté', body: `${t.libelle} : mets ${eur(t.montantEur * P.provision)} de côté (${Math.round(P.provision * 100)} % pour cotisations et impôt).`, url: '/#/entreprise', tag: 'provision' });
       }
     }
   }
@@ -132,7 +132,7 @@ async function compute(uid: string, now: ReturnType<typeof paris>, forceHour?: n
   if (hour === 17 && P.notif('jours') && today === core.lastBusinessDay(month)) {
     const inv = data.invoices.filter((i: any) => i.periode === month && i.statut === 'Planifiée');
     const who = inv.length ? [...new Set(inv.map((i: any) => i.client))].join(', ') : 'tes clients';
-    notes.push({ key: `jours:${month}`, title: `Jours travaillés en ${monthLong(month).split(' ')[0]} ?`, body: `Renseigne le nombre de jours pour ${who} et prépare la facture.`, url: `/#/freelance?jours=${month}`, tag: 'jours' });
+    notes.push({ key: `jours:${month}`, title: `Jours travaillés en ${monthLong(month).split(' ')[0]} ?`, body: `Renseigne le nombre de jours pour ${who} et prépare la facture.`, url: `/#/entreprise?jours=${month}`, tag: 'jours' });
   }
 
   if (hour === 20 && P.notif('saisie')) {

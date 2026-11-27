@@ -89,9 +89,9 @@ export function render() {
   // Carte 3 : résultat par activité ou revenus par source
   let c3;
   if (S.activity === 'Tout') {
-    const items = ['Perso', 'Freelance', 'Immobilier'].map((a) => { const s = summarize(list.filter((t) => t.activite === a), { activity: 'Tout' }); return { label: a, dot: a, value: s.res, rev: s.rev, dep: s.dep }; });
+    const items = ['Perso', 'Entreprise', 'Immobilier'].map((a) => { const s = summarize(list.filter((t) => t.activite === a), { activity: 'Tout' }); return { label: a, dot: a, value: s.res, rev: s.rev, dep: s.dep }; });
     c3 = h('div', { class: 'card' }, h('header', null, h('h2', null, 'Résultat par activité'), h('span', { class: 'sub' }, 'revenus − dépenses courantes')),
-      barList(items.map((i) => ({ label: i.label, dot: i.dot, value: i.value, color: `var(--${i.label === 'Perso' ? 'perso' : i.label === 'Freelance' ? 'freelance' : 'immo'})` })), { fmt: (v) => (v > 0 ? '+' : '') + eur(v) }),
+      barList(items.map((i) => ({ label: i.label, dot: i.dot, value: i.value, color: `var(--${i.label === 'Perso' ? 'perso' : i.label === 'Entreprise' ? 'entreprise' : 'immo'})` })), { fmt: (v) => (v > 0 ? '+' : '') + eur(v) }),
       h('table', { class: 'tbl', style: { marginTop: '14px' } }, h('thead', null, h('tr', null, h('th', null, ''), h('th', { class: 'r' }, 'Revenus'), h('th', { class: 'r' }, 'Dépenses'), h('th', { class: 'r' }, 'Résultat'))),
         h('tbody', null, items.map((i) => h('tr', null, h('td', null, h('i', { class: 'adot ' + i.label }), i.label), h('td', { class: 'r num' }, eur(i.rev)), h('td', { class: 'r num' }, eur(i.dep)), h('td', { class: 'r num', style: { fontWeight: 700 } }, h('span', { class: i.value >= 0 ? 'pos' : 'neg' }, (i.value > 0 ? '+' : '') + eur(i.value))))))));
   } else {
@@ -153,11 +153,11 @@ function cashCard() {
       h('tr', null, h('td', null, 'Dépenses courantes'), h('td', { class: 'r num neg' }, '−' + eur(p.dep, 2))),
       h('tr', null, h('td', null, 'Investissements (bourse, apports immobiliers…)'), h('td', { class: 'r num neg' }, '−' + eur(p.inv, 2))),
       h('tr', null, h('td', null, 'Financements (distributions, prêts…)'), h('td', { class: 'r num' }, (p.fin >= 0 ? '+' : '−') + eur(Math.abs(p.fin), 2))),
-      h('tr', null, h('td', null, h('b', null, 'Trésorerie perso & freelance')), h('td', { class: 'r num' }, h('b', null, eur(p.eur, 2)))))),
+      h('tr', null, h('td', null, h('b', null, 'Trésorerie perso')), h('td', { class: 'r num' }, h('b', null, eur(p.eur, 2)))))),
     c.releve ? h('div', { class: 'note', style: { marginTop: '8px' } }, `Dernier relevé de comptes (${fmtDate(c.releve.date)}) : ${eur(c.releve.dispo)} disponibles. L’écart (${eur(c.releve.dispo - p.eur)}) correspond aux soldes antérieurs au ${fmtDate(p.since)} ou à des opérations non saisies.`) : null);
   return h('div', { class: 'card' }, h('header', null, h('h2', null, 'Trésorerie actuelle'), h('span', { class: 'sub' }, 'cumul de tous les flux depuis le début')),
     h('div', { class: 'cashlist' },
-      row('Perso & freelance', h('span', { class: p.eur >= 0 ? '' : 'neg' }, eur(p.eur, 2)), `compte en France · depuis le ${fmtDate(p.since)}`),
+      row('Perso', h('span', { class: p.eur >= 0 ? '' : 'neg' }, eur(p.eur, 2)), `compte en France · depuis le ${fmtDate(p.since)}`),
       c.projets.map((x) => row(x.nom, [mad(x.mineMad), h('span', { class: 'sub' }, `≈ ${eur(x.mineEur)}`)], `${x.shared ? 'partagé · ' : ''}ma part ${Math.round(x.part * 100)} % de ${mad(x.mad)}`)),
       row('Total (mes parts)', h('b', null, eur(c.totalMineEur, 2)), null, 'total')),
     det);

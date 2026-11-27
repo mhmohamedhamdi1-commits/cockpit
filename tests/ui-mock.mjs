@@ -59,7 +59,7 @@ async function mockApi(ctx) {
 
 const b = await launch();
 let fail = 0;
-const routes = ['dashboard', 'ops', 'freelance', 'immo', 'wealth', 'bourse', 'recurring', 'settings'];
+const routes = ['dashboard', 'ops', 'entreprise', 'immo', 'wealth', 'bourse', 'recurring', 'settings'];
 for (const [dev, opts] of [['bureau', { viewport: { width: 1440, height: 900 } }], ['iphone', devices['iPhone 14']]]) {
   for (const [lang, cur] of [['fr', 'EUR'], ['en', 'MAD'], ['ar', 'EUR']]) {
     const ctx = await b.newContext(opts);

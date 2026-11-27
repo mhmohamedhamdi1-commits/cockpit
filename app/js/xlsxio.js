@@ -1,7 +1,11 @@
 // Export / import Excel au format historique de Cockpit (mêmes onglets, mêmes en-têtes).
 // Module sans dépendance au DOM : utilisé par l'application (navigateur) et par le script de migration (Node).
 // La bibliothèque SheetJS est passée en paramètre (XLSX).
-import { TABLES, BY_KEY, dbCol, DEFAULT_PARAMS } from './schema.js';
+import { TABLES, BY_KEY, dbCol, DEFAULT_PARAMS, safeJson } from './schema.js';
+
+const CURRENCIES = ['EUR', 'MAD', 'USD', 'GBP', 'CHF'];
+const cur = (v) => { const x = String(v || '').trim().toUpperCase(); return CURRENCIES.includes(x) ? x : 'EUR'; };
+const act = (v) => (v === 'Freelance' ? 'Entreprise' : v);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const round2 = (v) => Math.round(v * 100) / 100;
@@ -64,6 +68,7 @@ export function parseWorkbook(XLSX, buf) {
         if (c.t === 'date') o[k] = parseDate(raw) || null;
         else if (c.t === 'money' || c.t === 'rate') o[k] = parseNum(raw);
         else if (c.t === 'int') o[k] = Math.round(parseNum(raw));
+        else if (c.t === 'json') o[k] = typeof raw === 'string' && raw.trim() ? safeJson(raw) : {};
         else o[k] = String(raw ?? '').trim();
       }
       const u = hdr.has('UUID') ? String(r[hdr.get('UUID')] || '').trim() : '';
@@ -89,7 +94,7 @@ function normalize(d, errors) {
   const cat = new Map((d.categories || []).map((c) => [`${c.activite}|${c.sens}|${c.categorie}`, c]));
   const err = (sheet, r, msg) => { if (errors.length < 50) errors.push(`${sheet} ligne ${r._row} : ${msg}`); };
   for (const t of d.tx || []) {
-    if (t.devise !== 'MAD') t.devise = 'EUR';
+    t.devise = cur(t.devise); t.activite = act(t.activite);
     if (!(t.taux > 0)) t.taux = t.devise === 'MAD' ? rate : 1;
     if (t.montant_eur === 0 && t.montant !== 0) t.montant_eur = round2(t.montant * t.taux);
     if (t.montant < 0) {
@@ -100,7 +105,7 @@ function normalize(d, errors) {
     if (!t.periode && t.date) t.periode = t.date.slice(0, 7);
     if (!t.date) err('Transactions', t, 'date manquante ou illisible');
     if (!(t.montant > 0)) err('Transactions', t, 'montant nul');
-    if (!['Perso', 'Freelance', 'Immobilier'].includes(t.activite)) err('Transactions', t, `activité « ${t.activite} » invalide`);
+    if (!['Perso', 'Entreprise', 'Immobilier'].includes(t.activite)) err('Transactions', t, `activité « ${t.activite} » invalide`);
     if (!['Revenu', 'Dépense'].includes(t.sens)) err('Transactions', t, `sens « ${t.sens} » invalide`);
     if (!t.categorie) err('Transactions', t, 'catégorie vide');
     if (!['Courant', 'Investissement', 'Financement'].includes(t.nature)) err('Transactions', t, `nature « ${t.nature} » invalide`);
@@ -108,20 +113,22 @@ function normalize(d, errors) {
   for (const v of d.invoices || []) {
     if (v.ht === 0) v.ht = round2(v.jours * v.tjm);
     if (v.ttc === 0) v.ttc = round2(v.ht * (1 + v.tva));
-    if (v.devise !== 'MAD') v.devise = 'EUR';
+    v.devise = cur(v.devise);
     if (!['Planifiée', 'Envoyée', 'Payée'].includes(v.statut)) v.statut = 'Planifiée';
     if (!v.client) err('Factures', v, 'client vide');
     if (!/^\d{4}-\d{2}$/.test(v.periode)) err('Factures', v, `période « ${v.periode} » invalide (AAAA-MM)`);
   }
   for (const s of d.snapshots || []) {
-    if (s.devise !== 'MAD') s.devise = 'EUR';
-    if (s.solde_eur === 0 && s.solde !== 0) s.solde_eur = s.devise === 'MAD' ? round2(s.solde * rate) : s.solde;
+    s.devise = cur(s.devise);
+    if (s.solde_eur === 0 && s.solde !== 0) s.solde_eur = s.devise === 'MAD' ? round2(s.solde * rate) : s.devise === 'EUR' ? s.solde : 0;
     if (!s.date) err('Relevés', s, 'date manquante');
   }
   for (const k of ['lots', 'tenants', 'clients', 'accounts']) for (const r of d[k] || []) if (!r.nom) err(BY_KEY[k].sheet, r, 'nom vide');
   for (const r of d.tenants || []) if (!r.lot) err('Locataires', r, 'lot vide');
   for (const r of d.recurring || []) if (!r.libelle || !r.categorie) err('Récurrents', r, 'libellé ou catégorie vide');
   for (const r of d.rappels || []) { if (!r.titre || !r.date) err('Rappels', r, 'titre ou échéance vide'); if (!['Une fois', 'Mensuel', 'Trimestriel', 'Annuel'].includes(r.frequence)) r.frequence = 'Une fois'; }
+  for (const r of d.categories || []) { r.activite = act(r.activite); }
+  for (const r of d.recurring || []) { r.activite = act(r.activite); r.devise = cur(r.devise); }
   for (const r of d.categories || []) if (!r.activite || !r.sens || !r.categorie) err('Catégories', r, 'activité, sens ou catégorie vide');
 }
 
@@ -143,6 +150,7 @@ export function buildWorkbook(XLSX, data, { exportedAt = new Date() } = {}) {
         else if (c.t === 'money') row.push({ t: 'n', v: Number(v) || 0, z: '#,##0.00' });
         else if (c.t === 'rate') row.push({ t: 'n', v: Number(v) || 0, z: '0.0000' });
         else if (c.t === 'int') row.push({ t: 'n', v: Number(v) || 0, z: '0' });
+        else if (c.t === 'json') row.push(v && typeof v === 'object' && Object.keys(v).length ? JSON.stringify(v) : '');
         else row.push(v == null ? '' : String(v));
       }
       row.push(r.id || '');
