@@ -43,6 +43,10 @@ const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(
 function rebuild() {
   const d = {};
   for (const t of TABLES) d[t.key] = [...rows[t.key].values()];
+  // Projet supprimé (ou partage retiré) : ses opérations, récurrences, lots et locataires sortent de TOUS les calculs
+  // et listes. Rien n'est effacé : si le projet est restauré, tout réapparaît.
+  const live = new Set(d.projets.map((p) => p.id));
+  for (const k of ['tx', 'recurring', 'lots', 'tenants']) if (d[k]) d[k] = d[k].filter((r) => !r.projetId || live.has(r.projetId));
   S.data = d;
   S.today = today();
   Object.assign(S, buildIndex(d));

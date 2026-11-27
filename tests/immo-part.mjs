@@ -14,7 +14,7 @@ const P1 = { ...base(), nom: 'Amal 1', type: 'Immobilier', part: 0.67, devise: '
 const P2 = { ...base(), nom: 'Riad', type: 'Immobilier', part: 0.5, devise: 'MAD', note: '' };
 const tx = (projet, sens, categorie, montant, lot = '') => ({ ...base(), date, activite: 'Immobilier', sens, categorie, detail: '', libelle: categorie, montant, devise: 'MAD', taux: 0.0913,
   montant_eur: montant * 0.0913, nature: 'Courant', tiers: '', lot, periode: month, ref: '', note: '', projet_id: projet.id });
-const db = {
+let db = {
   projets: [P1, P2],
   lots: [{ ...base(), code: '01', nom: '01. Lot A', loyer: 1000, projet_id: P1.id }, { ...base(), code: '02', nom: '02. Lot B', loyer: 2000, projet_id: P2.id }],
   tenants: [],
@@ -84,6 +84,40 @@ check(num(r.loyers) === 1000, 'Riad / Ma part : loyers = 2000×50 % = 1 000', r.
 const real = errs.filter((e) => !/WebSocket|realtime|Failed to fetch/i.test(e));
 check(real.length === 0, 'aucune erreur JS', real.join(' | '));
 await p.screenshot({ path: '/tmp/immo-part.png' });
+
+// Projet supprimé : Riad n'est plus renvoyé par la base, mais ses opérations et son lot existent toujours
+db = { ...db, projets: [P1] };
+const ctx2 = await b.newContext({ viewport: { width: 1400, height: 900 } });
+await ctx2.route(`${SB}/**`, async (route) => {
+  const u = new URL(route.request().url());
+  const json = (x) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(x), headers: { 'access-control-allow-origin': '*', 'content-range': '0-0/*' } });
+  if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' } });
+  if (u.pathname.startsWith('/auth/v1/user')) return json(session.user);
+  if (u.pathname.startsWith('/auth/v1/') || u.pathname.startsWith('/functions/') || u.pathname.startsWith('/rest/v1/rpc/')) return json({});
+  const table = u.pathname.replace('/rest/v1/', '');
+  if (table === 'fx_rates') return json([{ pair: 'MAD/EUR', rate: 0.0913, date: now.slice(0, 10), source: 'test' }]);
+  const filtered = [...u.searchParams.keys()].some((k) => ['id', 'projet_id', 'updated_at'].includes(k));
+  const range = route.request().headers()['range'];
+  if (filtered || Number(u.searchParams.get('offset') || 0) > 0 || (range && !range.startsWith('0-'))) return json([]);
+  return json(db[table] || []);
+});
+await ctx2.addInitScript(([s, m]) => {
+  localStorage.setItem('cockpit-auth', JSON.stringify(s));
+  localStorage.setItem('cockpit.prefs.v1', JSON.stringify({ lang: 'fr', displayCur: 'MAD', period: { from: m, to: m }, immoView: 'full', immoProjet: '', activity: 'Tout' }));
+}, [session, month]);
+const p2 = await ctx2.newPage();
+const errs2 = []; p2.on('pageerror', (e) => errs2.push(e.message));
+await p2.goto(`${APP}/#/immo`); await p2.waitForSelector('.page .kpi', { timeout: 20000 }); await p2.waitForTimeout(300);
+const k2 = await p2.evaluate(() => { const c = [...document.querySelectorAll('.kpi')].find((x) => x.querySelector('.t').textContent.includes('Loyers encaissés')); return { loyers: c ? c.querySelector('.v').textContent : '', chips: [...document.querySelectorAll('.pchip')].map((x) => x.textContent.trim()), occ: [...document.querySelectorAll('.kpi')].find((x) => x.querySelector('.t').textContent.includes('occupation'))?.querySelector('.v').textContent }; });
+check(num(k2.loyers) === 1000, 'projet Riad supprimé : loyers (Total) = 1 000, ceux de Riad ne comptent plus', k2.loyers);
+check(!k2.chips.some((c) => c.includes('Riad')), 'projet Riad supprimé : plus proposé', k2.chips.join(' | '));
+check((k2.occ || '').replace(/\s/g, '').endsWith('/1'), 'projet Riad supprimé : son lot ne compte plus (1 lot)', k2.occ);
+await p2.goto(`${APP}/#/ops`); await p2.waitForTimeout(500);
+const opsText = await p2.innerText('.page');
+check(!/2\s?000/.test(opsText) && !opsText.includes('200,00'), 'projet Riad supprimé : ses opérations n’apparaissent plus dans Opérations', opsText.slice(0, 200).replace(/\n/g, ' '));
+const real2 = errs2.filter((e) => !/WebSocket|realtime|Failed to fetch/i.test(e));
+check(real2.length === 0, 'aucune erreur JS (projet supprimé)', real2.join(' | '));
+await p2.screenshot({ path: '/tmp/immo-projet-supprime.png' });
 await b.close();
 console.log(fail ? `\n${fail} échec(s)` : '\nTout est OK');
 process.exit(fail ? 1 : 0);
