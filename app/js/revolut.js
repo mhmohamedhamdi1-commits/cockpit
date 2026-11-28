@@ -157,13 +157,15 @@ export function kindOf(type, description = '') {
 function kindFromText(d) {
   const s = normLabel(d);
   if (/^(exchanged to|exchange|converti|change )/.test(s)) return 'exchange';
-  if (/top ?up|rechargement|depot/.test(s)) return 'topup';
+  // mouvements entre ses propres poches / comptes d'investissement Revolut
+  if (/compte d ?investissement|investment account|\b(coffre|vault|pocket)\b|epargne revolut|round up|arrondi/.test(s)) return 'internal';
+  if (/top ?up|recharge|depot/.test(s)) return 'topup';
   if (/atm|retrait/.test(s)) return 'atm';
-  if (/\b(fee|frais)\b/.test(s)) return 'fee';
+  if (/^(fee|frais|commission)\b|^(.{0,20})frais de (tenue|compte|carte|change)/.test(s)) return 'fee';   // « Stop Frais » (nom d'un commerçant) n'est PAS un frais Revolut
   if (/interest|interet/.test(s)) return 'interest';
   if (/cashback|reward/.test(s)) return 'cashback';
   if (/refund|remboursement/.test(s)) return 'refund';
-  if (/^(to |from |a |de |transfer|virement|payment from|paiement de)/.test(s)) return 'transfer';
+  if (/^(to |from |a |de |transfer|virement|payment from|payment sent|paiement de|paiement envoye)/.test(s)) return 'transfer';
   return 'card';
 }
 
@@ -320,8 +322,29 @@ function explodeItem(it, cols) {
 // Fusionne les items adjacents d'une même colonne en un texte
 const joinItems = (items) => items.map((i) => i.str).join(' ').replace(/\s+/g, ' ').trim();
 
+// Pied de page de chaque page (« Signaler une carte perdue ou volée… », mentions légales) : tout ce qui est en dessous est ignoré
+const FOOTER_RE = /signaler une carte|report (a )?lost|obtenir de l.aide|get help directly/i;
+function cutFooters(items) {
+  const footerY = new Map();
+  for (const it of items) if (FOOTER_RE.test(it.str)) { const pg = it.page || 1; footerY.set(pg, Math.max(footerY.get(pg) || 0, it.y)); }
+  return items.filter((it) => !footerY.has(it.page || 1) || it.y > footerY.get(it.page || 1) + 4);
+}
+// Titulaire du compte : première ligne en majuscules (2 à 4 mots) de la 1re page, hors mentions Revolut
+function holderOf(items) {
+  const first = items.filter((i) => (i.page || 1) === (items[0].page || 1) && String(i.str).trim());
+  for (const it of first.sort((a, b) => b.y - a.y)) {
+    const t = String(it.str).trim();
+    if (/^[A-ZÀ-Ý][A-ZÀ-Ý' -]+$/.test(t) && t.split(/\s+/).length >= 2 && t.split(/\s+/).length <= 4 && !/REVOLUT|IBAN|BIC|EUR|USD|CHF|GBP|RELEV|STATEMENT/.test(t)) return t.replace(/\s+/g, ' ');
+  }
+  return '';
+}
+// Libellé lisible : sans IBAN ni numéro de carte masqué
+const cleanLabel = (t) => t.replace(/\b[A-Z]{2}\d{2}[A-Z0-9 ]{10,32}\b/g, '').replace(/\b\d{6}\*{4,}\d{4}\b/g, '').replace(/\s*,\s*$/, '').replace(/\s+/g, ' ').trim();
+
 export function parsePdfItems(items, { fallbackCurrency = '' } = {}) {
   const res = { format: 'pdf', lines: [], skipped: [], warnings: [] };
+  if (items.length) res.holder = holderOf(items);
+  items = cutFooters(items);
   const lines = groupLines(items);
   const fullText = lines.map((l) => joinItems(l.items)).join('\n');
   let docCur = '';
@@ -351,7 +374,7 @@ export function parsePdfItems(items, { fallbackCurrency = '' } = {}) {
     if (!cols) continue;
     l.items = l.items.flatMap((it) => explodeItem(it, cols)).sort((a, b) => a.x - b.x);
     const txt = joinItems(l.items);
-    if (/^(page\s+\d+|\d+\s*\/\s*\d+$|revolut (bank|ltd|payments)|©|report lost|get help|scan the qr|signalez|obtenir de l'aide)/i.test(txt)) { flush(); continue; }
+    if (/^(page\s+\d+|\d+\s*\/\s*\d+$|revolut (bank|ltd|payments|france)|©|report lost|get help|scan the qr|signalez|signaler|scanner le qr|obtenir de l'aide|relev[ée]\s+[A-Z]{3}$|statement\s+[A-Z]{3}$|g[ée]n[ée]r[ée] le|generated on)/i.test(txt)) { flush(); continue; }
     if (/^(total|balance summary|r[ée]sum[ée] du solde|opening balance|closing balance|solde d'ouverture|solde de cl[oô]ture)/i.test(txt)) { flush(); continue; }
     const first = l.items[0];
     const dateStr = first && first.x < (cols.description.left - 2) && DATE_RE.test(first.str.trim()) ? joinItems(l.items.filter((i) => i.x < cols.description.left - 2)) : '';
@@ -395,7 +418,7 @@ export function parsePdfItems(items, { fallbackCurrency = '' } = {}) {
     }
   }
   flush();
-  for (const l of res.lines) l.kind = kindFromText(l.libelle);
+  for (const l of res.lines) { l.libelle = cleanLabel(l.libelle); l.kind = kindFromText(l.libelle); if (l.kind === 'card') l.libelle = l.libelle.replace(/\s+[ÀA]\s:.*$/, '').trim() || l.libelle; }   // paiement carte : on garde le nom du commerçant
   if (!cols) res.error = 'Mise en page du PDF non reconnue (tableau « Date / Description / Argent sortant / Argent entrant / Solde » introuvable). Exporte plutôt le relevé en CSV ou Excel depuis l’app Revolut (Relevés › Excel / CSV).';
   else if (!res.lines.length) res.error = 'Aucune opération lue dans ce PDF. Exporte plutôt le relevé en CSV ou Excel depuis l’app Revolut (Relevés › Excel / CSV).';
   if (!docCur && res.lines.length) res.warnings.push(`Devise du relevé non indiquée : ${fallbackCurrency || 'EUR'} supposée.`);

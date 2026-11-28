@@ -146,6 +146,7 @@ export function classifyLine(l, { categories = [], hist = null, ownNames = [] } 
 
   // 1. virements internes
   if (l.kind === 'exchange') return { ...res, ignore: true, ignoreReason: 'Change de devise (mouvement interne)', how: 'type', score: 1 };
+  if (l.kind === 'internal') return { ...res, ignore: true, ignoreReason: 'Mouvement entre tes poches / comptes Revolut', how: 'type', score: 1 };
   if (l.kind === 'topup') return { ...res, ignore: true, ignoreReason: 'Rechargement du compte (virement interne probable)', how: 'type', score: 0.9 };
   if (l.kind === 'transfer' && isOwnTransfer(l.libelle, ownNames)) return { ...res, ignore: true, ignoreReason: 'Virement entre tes propres comptes', how: 'type', score: 0.95 };
 

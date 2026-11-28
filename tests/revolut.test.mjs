@@ -209,6 +209,42 @@ test('PDF : en-têtes français et dates « 12 nov. 2026 »', () => {
   assert.equal(r.lines[0].devise, 'EUR');
 });
 
+test('PDF réel Revolut France (relevé multi-comptes) : pied de page, en-tête de page, internes, « Stop Frais », titulaire', () => {
+  const it = (str, x, y, w = str.length * 5, page = 1) => ({ str, x, y, w, page });
+  const page = (n, cur, rows) => [
+    it(`Relevé ${cur}`, 452, 757, 60, n), it('Généré le 28 nov. 2026', 470, 744, 80, n), it('Revolut France succursale de Revolut Bank UAB', 381, 731, 150, n),
+    ...(n === 1 ? [it('MOHAMED HAMDI', 40, 689, 70, n)] : []),
+    it('Transactions du compte : du 1 novembre 2026 au 28 novembre 2026', 40, 307, 250, n),
+    it('Date', 43, 281, 20, n), it('Description', 125, 281, 50, n), it('Argent sortant', 335, 281, 60, n), it('Argent entrant', 417, 281, 60, n), it('Solde', 535, 281, 25, n),
+    ...rows,
+    it('Signaler une carte perdue ou volée', 85, 110, 120, n), it('+370 5 214 3608', 85, 100, 60, n), it('Revolut Bank UAB est un établissement de crédit agréé', 267, 112, 200, n)];
+  const row = (y, date, desc, out, inn, bal, sub = [], n = 1) => [it(date, 43, y, 45, n), it(desc, 125, y, desc.length * 5, n), ...(out ? [it(out, 335, y, 40, n)] : []), ...(inn ? [it(inn, 417, y, 45, n)] : []), it(bal, 522, y, 40, n), ...sub.map((t, i) => it(t, 125, y - 8 * (i + 1), t.length * 5, n))];
+  const items = [
+    ...page(1, 'EUR', [
+      ...row(262, '1 nov. 2026', 'Paiement envoyé par M MOHAMED HAMDI', '', '1800,00€', '1808,21€', ['De : M MOHAMED HAMDI, FR3930002026000000584270E11']),
+      ...row(220, '6 nov. 2026', 'Vers le compte d\'investissement', '800,00€', '', '1008,21€'),
+      ...row(190, '20 nov. 2026', 'Hyper Halal', '56,64€', '', '951,57€', ['À : Stop Frais, Nanterre']),
+      ...row(160, '21 nov. 2026', 'Auchan', '55,62€', '', '895,95€', ['À : Auchan 0031m, Puteaux', 'Carte : 416598******3480'])]),
+    ...page(2, 'USD', [...row(262, '19 nov. 2026', 'Recharge', '', '8,35$', '9,19$', ['From investment account'], 2)])];
+  const r = parsePdfItems(items);
+  assert.equal(r.error, undefined);
+  assert.equal(r.holder, 'MOHAMED HAMDI');
+  assert.equal(r.lines.length, 5);
+  const by = (d) => r.lines.find((l) => l.libelle.startsWith(d));
+  assert.equal(by('Paiement envoyé').kind, 'transfer'); assert.equal(by('Paiement envoyé').montant, 1800);
+  assert.ok(!/FR39/.test(by('Paiement envoyé').libelle), 'IBAN retiré du libellé');
+  assert.equal(by('Vers le compte').kind, 'internal');
+  assert.equal(by('Hyper Halal').kind, 'card', '« Stop Frais » est un commerçant, pas des frais');
+  assert.equal(by('Hyper Halal').libelle, 'Hyper Halal');
+  assert.equal(by('Auchan').libelle, 'Auchan');
+  const usd = r.lines.find((l) => l.devise === 'USD'); assert.equal(usd.montant, 8.35); assert.equal(usd.kind, 'internal');
+  assert.ok(r.lines.every((l) => !/Signaler|Revolut Bank|Relevé|Généré/.test(l.libelle)), 'pas de pied ni d\'en-tête de page dans les libellés');
+  // titulaire connu : le virement depuis son autre compte est ignoré automatiquement
+  const cls = classifyLines(r.lines, { tx: [], categories: [], ownNames: ['Mohamed Hamdi'] }, { activite: 'Perso' });
+  assert.equal(cls[r.lines.indexOf(by('Paiement envoyé'))].ignore, true);
+  assert.equal(cls[r.lines.indexOf(by('Vers le compte'))].ignore, true);
+});
+
 // ---------- classification ----------
 const db = buildMockDb({ withBackup: false });
 const mapRow = (r) => ({ ...r, projetId: r.projet_id, montantEur: r.montant_eur });
