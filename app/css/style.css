@@ -557,7 +557,8 @@ body { letter-spacing: -.01em; }
 .nav a.on { background: var(--accent); color: #fff; }
 .nav a.on svg { color: #fff; }
 .side { background: color-mix(in srgb, var(--bg) 70%, var(--surface)); border-right: 0; }
-.brand .logo { background: linear-gradient(135deg, #0a84ff, #5e5ce6); color: #fff; border-radius: 10px; }
+.brand .logo { background: #000; color: #fff; border-radius: 10px; }
+:root[data-theme="dark"] .brand .logo { background: #fff; color: #000; }   /* logo noir (blanc en mode sombre pour rester visible) */
 .top { background: color-mix(in srgb, var(--bg) 82%, transparent); border-bottom: 0; }
 .top h1 { font-size: 30px; font-weight: 750; letter-spacing: -.03em; }
 input[type=text], input[type=number], input[type=date], input[type=month], input[type=search], input[type=email], input[type=password], input[type=tel], select, textarea { border-radius: 12px; background: var(--surface-2); border-color: transparent; }
