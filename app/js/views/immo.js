@@ -1,11 +1,12 @@
-import { h, icon, eur, mad, num0, pct, monthsBetween, monthShort, monthLong, monthEnd, addMonths, fmtDate, sum, clear, CUR_CODES } from '../util.js';
-import { S, ops, upsert, del, todayMonth, emit, savePrefs, isMine, projetsVisibles, immoProjets, membershipOf, partOf, projetOfLot } from '../state.js';
+import { h, icon, eur, mad, num0, pct, monthsBetween, monthShort, monthLong, monthLabel, monthEnd, addMonths, fmtDate, sum, clear, CUR_CODES } from '../util.js';
+import { S, ops, upsert, del, todayMonth, emit, savePrefs, isMine, projetsVisibles, immoProjets, membershipOf, partOf, projetOfLot, assocOpts } from '../state.js';
 import { sb } from '../supa.js';
 import { txs, rentCell, tenancyFor, activeTenants, summarize } from '../calc.js';
-import { modal, field, select, confirmBox, empty, toast, segmented } from '../ui.js';
+import { modal, field, select, confirmBox, confirmTyped, empty, toast, segmented } from '../ui.js';
 import { openTxForm } from '../txform.js';
 import { kpi, catChip, amountEl } from './common.js';
-import { barList } from '../charts.js';
+import { barList, seriesChart } from '../charts.js';
+import { associatesOf, partnerBalances, capitalRecovery, occupancy, projectInsights } from '../immo-calc.js';
 
 export function meta() { const p = curProjet(); return { title: p ? p.nom : 'Immobilier', sub: p ? (isMine(p) ? 'Projet immobilier' : `Partagé avec toi en lecture seule`) : 'Tous tes projets immobiliers', immoToggle: true }; }
 
@@ -21,7 +22,13 @@ const toMad = (t) => (t.devise === 'MAD' ? t.montant : t.montantEur / S.P.taux);
 const wOf = (projetId) => (S.immoView === 'full' ? 1 : partOf(projetId));
 const madW = (t) => toMad(t) * wOf(t.projetId);
 const shortLot = (l) => l.replace(/^\d+\.\s*/, '');
-const lotCode = (l) => (l.match(/^(\d+)\./) || [, ''])[1];
+const lotCode = (l, code = '') => (l.match(/^(\d+)\./) || [, code || ''])[1];
+const lotOf = (nom) => S.lots.find((x) => x.nom === nom);
+// prochain code de lot du projet : dernier code numérique + 1 (même règle que le serveur)
+function nextLotCode(projetId) {
+  const codes = S.lots.filter((l) => l.projetId === projetId && /^\d{1,9}$/.test(l.code)).map((l) => l.code);
+  return String((codes.length ? Math.max(...codes.map(Number)) : -1) + 1).padStart(Math.max(2, ...codes.map((c) => c.length), 2), '0');
+}
 const showOld = { v: false };
 
 // ---------- encaissement ----------
@@ -130,6 +137,7 @@ function openDeparture(t) {
 }
 
 // ---------- page ----------
+const R = { growth: 0 };   // hypothèse de hausse annuelle des loyers pour la projection du capital
 export function render() {
   const cur = todayMonth();
   const P = curProjet(), ro = P && !isMine(P);
@@ -139,15 +147,16 @@ export function render() {
   const charges = sum(list.filter((t) => t.categorie === 'Charges refacturées' && t.sens === 'Revenu'), madW);
   const revC = sum(list.filter((t) => t.nature === 'Courant' && t.sens === 'Revenu'), madW), depC = sum(list.filter((t) => t.nature === 'Courant' && t.sens === 'Dépense'), madW);
   const res = revC - depC;
-  // occupation
+  // occupation : aujourd'hui, et sur la période sélectionnée (jours-lots occupés / jours-lots disponibles)
   const occ = lots.filter((l) => rentCell(l.nom, cur).tenant).length;
+  const occP = occupancy(S, lots, S.period.from, S.period.to);
   // impayés sur la période
   const months = monthsBetween(S.period.from, S.period.to).filter((m) => m <= cur);
   let unpaid = 0, unpaidN = 0, expectedTot = 0;
   for (const l of lots) for (const m of months) { const c = rentCell(l.nom, m); expectedTot += c.expected; if (c.status === 'late' || c.status === 'part' || (c.status === 'due')) { unpaid += (c.expected - c.paid) * wOf(l.projetId); unpaidN++; } }
   const kpis = h('div', { class: 'kpis' },
     kpi({ title: 'Loyers encaissés', ic: 'building', value: mad(loyers), sub: [h('span', null, `+ ${mad(charges)} de charges refacturées`)] }),
-    kpi({ title: 'Taux d’occupation', ic: 'key', value: `${occ} / ${lots.length}`, sub: [h('span', { class: 'delta ' + (occ === lots.length ? 'good' : 'bad') }, pct(lots.length ? occ / lots.length : 0)), h('span', null, 'lots loués aujourd’hui')] }),
+    kpi({ title: 'Taux d’occupation', ic: 'key', value: occP.rate == null ? '—' : pct(occP.rate, 1), sub: [h('span', { class: 'delta ' + (occP.rate == null ? 'flat' : occP.rate >= 0.92 ? 'good' : occP.rate >= 0.8 ? 'flat' : 'bad') }, `${occ} / ${lots.length}`), h('span', null, `lots loués aujourd’hui · ${occP.rate == null ? 'période à venir' : `${occP.vacantDays} jours-lots vacants sur la période`}`)] }),
     kpi({ title: 'Loyers à récupérer', ic: 'alert', value: h('span', { class: unpaid > 0 ? 'neg' : 'pos' }, mad(unpaid)), sub: [unpaid > 0 ? h('span', null, `${unpaidN} loyer${unpaidN > 1 ? 's' : ''} manquant${unpaidN > 1 ? 's' : ''} sur la période`) : h('span', { class: 'delta good' }, 'Tout est encaissé')] }),
     kpi({ title: 'Résultat d’exploitation', ic: 'wallet', value: h('span', { class: res >= 0 ? '' : 'neg' }, (res > 0 ? '+' : '') + mad(res)), sub: [h('span', null, `≈ ${eur(res * S.P.taux)}${S.immoView === 'mine' ? ' (ma part)' : ''}`)] }));
 
@@ -159,7 +168,7 @@ export function render() {
   const tb = h('tbody');
   for (const l of lots) {
     const cT = tenancyFor(l.nom, cur);
-    const tr = h('tr', null, h('td', { class: 'lot' }, h('b', null, `${lotCode(l.nom)} · ${shortLot(l.nom)}`), h('span', null, cT ? cT.nom : 'Vacant')));
+    const tr = h('tr', null, h('td', { class: 'lot' }, h('b', null, `${lotCode(l.nom, l.code)} · ${shortLot(l.nom)}`), h('span', null, cT ? cT.nom : 'Vacant')));
     for (const m of gm) {
       const c = rentCell(l.nom, m);
       const txt = { paid: [num0(c.paid), 'payé'], part: [num0(c.paid), `sur ${num0(c.expected)}`], late: ['—', 'impayé'], due: [num0(c.expected), 'à encaisser'], vac: ['·', ''], fut: ['', ''] }[c.status];
@@ -188,11 +197,16 @@ export function render() {
   const tCard = h('div', { class: 'card' }, h('header', null, h('h2', null, 'Locataires'), h('span', { class: 'sub' }, `${nAct} actif${nAct > 1 ? 's' : ''}`),
     h('div', { class: 'right' }, h('label', { class: 'split', style: { fontSize: '13px', color: 'var(--ink-2)', fontWeight: 600 } }, (() => { const c = h('input', { type: 'checkbox', checked: showOld.v }); c.addEventListener('change', () => { showOld.v = c.checked; emit(); }); return c; })(), 'Anciens'),
       ro ? null : h('button', { class: 'btn', onClick: () => openTenantForm() }, icon('plus', 16), 'Nouveau locataire'))),
-    tenants.length ? h('table', { class: 'tbl' }, h('thead', null, h('tr', null, ['Lot', 'Locataire', 'Loyer', 'Charges', 'Entrée', 'Caution', 'Contact', ''].map((x, i) => h('th', { class: i >= 2 && i <= 3 || i === 5 ? 'r' : '' }, x)))),
+    tenants.length ? h('div', { class: 'gridwrap' }, h('table', { class: 'tbl' }, h('thead', null, h('tr', null, ['Lot', 'Locataire', 'Loyer', 'Charges', 'Entrée', 'Caution', 'Contact', ''].map((x, i) => h('th', { class: i >= 2 && i <= 3 || i === 5 ? 'r' : '' }, x)))),
       h('tbody', null, tenants.map((t) => { const active = !t.sortie || t.sortie >= S.today;
         return h('tr', { class: (isMine(t) ? 'click' : '') + (active ? '' : ' dim'), onClick: () => { if (isMine(t)) openTenantForm(t); } }, h('td', null, shortLot(t.lot)), h('td', null, t.nom, !active ? h('span', { class: 'sub' }, `Parti le ${fmtDate(t.sortie)}`) : t.sortie ? h('span', { class: 'sub' }, `Sortie prévue le ${fmtDate(t.sortie)}`) : null),
           h('td', { class: 'r num' }, mad(t.loyer)), h('td', { class: 'r num' }, t.charges ? mad(t.charges) : '—'), h('td', null, fmtDate(t.entree)), h('td', { class: 'r num' }, t.caution ? mad(t.caution) : '—'), h('td', { class: 'muted' }, t.contact || ''),
-          h('td', { class: 'r', style: { whiteSpace: 'nowrap' } }, (() => { const u = active && isMine(t) ? unpaidOf(t) : []; return u.length ? h('button', { class: 'btn sm', title: 'Relancer par SMS / WhatsApp', onClick: (e) => { e.stopPropagation(); openRelance(t, u[0].month, u.reduce((s, x) => s + x.amount, 0)); } }, icon('message', 14), 'Relancer') : null; })(), ' ', active && !t.sortie && isMine(t) ? h('button', { class: 'btn sm', onClick: (e) => { e.stopPropagation(); openDeparture(t); } }, 'Départ') : null)); }))) : empty('Aucun locataire', 'Ajoute ton premier locataire.'));
+          h('td', { class: 'r', style: { whiteSpace: 'nowrap' } }, (() => {
+            if (!active || !isMine(t)) return null;
+            const u = lateOf(t);
+            return u.length ? h('button', { class: 'btn sm primary', title: 'Relancer par WhatsApp / SMS', onClick: (e) => { e.stopPropagation(); openMessage(t, { kind: 'relance', month: u[0].month, amount: u.reduce((s0, x) => s0 + x.amount, 0) }); } }, icon('message', 14), 'Relancer')
+              : h('button', { class: 'btn sm ghost', title: 'Envoyer un message (WhatsApp / SMS)', onClick: (e) => { e.stopPropagation(); openMessage(t, { kind: 'libre' }); } }, icon('message', 14), 'Message');
+          })(), ' ', active && !t.sortie && isMine(t) ? h('button', { class: 'btn sm', onClick: (e) => { e.stopPropagation(); openDeparture(t); } }, 'Départ') : null)); })))) : empty('Aucun locataire', 'Ajoute ton premier locataire.'));
 
   // dépenses du projet
   const m = new Map();
@@ -216,7 +230,131 @@ export function render() {
       stat('Trésorerie du projet', mad(treso), `≈ ${eur(treso * S.P.taux)}`),
       stat('Dettes restantes', mad(debt), debt <= 0.5 ? 'Tous les prêts sont remboursés' : 'Prêts non remboursés')));
 
-  return [projectsBar(), kpis, gridCard, h('div', { class: 'row2' }, tCard, h('div', { style: { display: 'flex', flexDirection: 'column', gap: '18px' } }, projCard, depCard))];
+  // les projets concernés par les blocs « associés / capital / analyses »
+  const scopeP = P ? [P] : projetsVisibles();
+  return [projectsBar(), kpis, relanceCard(), ...scopeP.map(associatesCard), gridCard, ...scopeP.map(capitalCard), h('div', { class: 'row2' }, tCard, h('div', { style: { display: 'flex', flexDirection: 'column', gap: '18px' } }, projCard, depCard)), ...scopeP.map(insightsCard), lotsCard()];
+}
+
+// Loyers en retard d'un locataire : mois passés non soldés ; le mois en cours seulement à partir du jour de relance (réglage, 5 par défaut)
+export function lateOf(ten) {
+  const lateDay = Math.round(S.P.notifNum('loyer_jour', 5)), cur = todayMonth(), today = +S.today.slice(8, 10);
+  return unpaidOf(ten).filter((x) => x.month < cur || today >= lateDay);
+}
+
+// ---------- Loyers à relancer (proposition automatique) ----------
+function relanceCard() {
+  const rows = S.data.tenants.filter((t) => isMine(t) && inScope(t.projetId || projetOfLot(t.lot)) && (!t.sortie || t.sortie >= S.today)).map((t) => ({ t, u: lateOf(t) })).filter((x) => x.u.length);
+  if (!rows.length) return null;
+  const total = sum(rows, (x) => sum(x.u, (y) => y.amount));
+  return h('div', { class: 'card' }, h('header', null, h('h2', null, 'Loyers à relancer'), h('span', { class: 'sub' }, `${rows.length} locataire${rows.length > 1 ? 's' : ''} · ${mad(total)} à récupérer`)),
+    h('table', { class: 'tbl' }, h('tbody', null, rows.map(({ t, u }) => {
+      const amount = sum(u, (y) => y.amount);
+      return h('tr', null, h('td', null, t.nom, h('span', { class: 'sub' }, `${shortLot(t.lot)} · ${u.map((x) => monthShort(x.month) + ' ' + x.month.slice(2, 4)).reverse().join(', ')}`)), h('td', { class: 'r num' }, mad(amount)),
+        h('td', { class: 'r', style: { whiteSpace: 'nowrap' } }, h('button', { class: 'btn sm', onClick: () => quickSend(t, 'WhatsApp', u[0].month, amount) }, icon('message', 14), 'WhatsApp'), ' ',
+          h('button', { class: 'btn sm', onClick: () => quickSend(t, 'SMS', u[0].month, amount) }, icon('send', 14), 'SMS'), ' ',
+          h('button', { class: 'btn sm ghost', onClick: () => openMessage(t, { kind: 'relance', month: u[0].month, amount }) }, 'Personnaliser')));
+    }))),
+    h('div', { class: 'note', style: { marginTop: '8px' } }, 'Le message s’ouvre dans WhatsApp ou Messages avec le texte prêt : c’est toi qui appuies sur Envoyer. Le numéro vient de la fiche du locataire (champ Contact).'));
+}
+
+// ---------- Comptes entre associés (qui a retiré quoi, qui doit combien à qui) ----------
+function associatesCard(P) {
+  const b = partnerBalances(S, P, assocOpts(P));
+  const mine = isMine(P);
+  const nm = (n) => n;
+  const owes = b.owes.map((o) => h('div', { class: 'owe' }, icon('alert', 18), h('span', null, `${o.from} doit ${mad(o.amount)} à ${o.to}`, h('span', { class: 'sub', style: { display: 'block', fontWeight: 500, fontSize: '12.5px' } }, `≈ ${eur(o.amount * S.P.taux)} — ${o.from} a retiré plus que sa part des retraits : à reverser dans le compte du projet (ou à compenser sur ses prochains retraits).`))));
+  const cards = b.associes.map((a) => h('div', { class: 'ac' + (a.maxRetrait > 0 ? ' big' : '') },
+    h('h3', null, h('span', null, a.nom, a.mine ? h('span', { class: 'pill info', style: { marginInlineStart: '6px' } }, 'moi') : null), h('span', { class: 'num' }, `${Math.round(a.part * 1000) / 10} %`)),
+    h('dl', null,
+      h('dt', null, 'Capital apporté'), h('dd', { class: 'num' }, mad(a.apports)),
+      h('dt', null, `Retraits (${a.nbRetraits})`), h('dd', { class: 'num' }, mad(a.retraits)),
+      h('dt', null, 'Sa part théorique des retraits'), h('dd', { class: 'num' }, mad(a.droit)),
+      h('dt', null, a.ecart > 0.5 ? 'A retiré EN TROP' : a.ecart < -0.5 ? 'A retiré EN MOINS (on lui doit)' : 'Écart'), h('dd', { class: 'num ' + (a.ecart > 0.5 ? 'neg' : a.ecart < -0.5 ? 'pos' : 'muted') }, (a.ecart > 0 ? '+' : '') + mad(a.ecart)),
+      h('dt', null, h('b', null, 'Peut retirer maintenant (max)')), h('dd', { class: 'v num ' + (a.maxRetrait > 0 ? 'pos' : 'muted') }, mad(a.maxRetrait)))));
+  return h('div', { class: 'card' }, h('header', null, h('h2', null, `Comptes entre associés${S.immoProjet ? '' : ' — ' + P.nom}`), h('span', { class: 'sub' }, 'montants du projet (100 %) : qui a retiré quoi, qui doit quoi à qui, combien chacun peut encore retirer'),
+    mine ? h('div', { class: 'right' }, h('button', { class: 'btn sm', onClick: () => openAssociates(P) }, icon('user', 14), 'Associés et parts')) : null),
+    b.retraits === 0 && b.apports === 0 ? empty('Aucun apport ni retrait enregistré', 'Saisis les « Apport en capital » et les « Distribution aux associés » avec le nom de l’associé dans Tiers (ex. Mohamed, Fatima).') : [
+      b.balanced ? h('div', { class: 'owe ok' }, icon('check', 18), 'Les retraits sont proportionnels aux parts : personne ne doit rien à l’autre.') : owes,
+      h('div', { class: 'assoc' }, cards),
+      h('div', { class: 'cashlist' },
+        h('div', { class: 'cashrow' }, h('div', null, h('b', null, 'Trésorerie du compte du projet'), h('span', { class: 'sub' }, 'revenus − dépenses de toute la vie du projet (100 %)')), h('div', { class: 'num v' }, [mad(b.tresorerie), h('span', { class: 'sub' }, `≈ ${eur(b.tresorerie * S.P.taux)}`)])),
+        h('div', { class: 'cashrow' }, h('div', null, h('b', null, 'Total des retraits'), h('span', { class: 'sub' }, 'toutes distributions aux associés')), h('div', { class: 'num v' }, mad(b.retraits + b.unassigned)))),
+      b.nUnassigned ? h('div', { class: 'infobox', style: { marginTop: '10px', background: 'var(--warn-bg)', color: 'var(--warn-ink)' } }, `${b.nUnassigned} retrait(s) pour ${mad(b.unassigned)} n’ont pas d’associé (champ Tiers vide ou inconnu) : ils ne sont pas comptés dans les écarts. Ouvre-les dans Opérations et renseigne le Tiers.`) : null,
+      h('details', { class: 'details' }, h('summary', null, icon('right', 14), 'Comment c’est calculé ?'),
+        h('div', { class: 'note', style: { lineHeight: 1.55 } }, 'Part théorique = part de l’associé × total des retraits. Écart = ce qu’il a réellement retiré − sa part théorique : positif, il a pris plus que sa part et doit la différence à l’autre ; négatif, on lui doit de l’argent. « Peut retirer maintenant » répartit la trésorerie disponible du compte du projet en rattrapant d’abord celui qui est en retard, puis au prorata des parts : en retirant ces montants, les retraits restent proportionnels aux parts.'))]);
+}
+
+function openAssociates(P) {
+  const cur = associatesOf(S, P, assocOpts(P));
+  const rows = cur.map((a) => ({ nom: a.nom, part: Math.round(a.part * 1000) / 10, moi: !!a.mine }));
+  const box = h('div');
+  const draw = () => {
+    clear(box);
+    box.append(h('table', { class: 'tbl' }, h('thead', null, h('tr', null, h('th', null, 'Associé (comme dans « Tiers »)'), h('th', { class: 'r' }, 'Part (%)'), h('th', null, 'C’est moi'), h('th', null))),
+      h('tbody', null, rows.map((r, i) => {
+        const n = h('input', { type: 'text', value: r.nom, placeholder: 'Prénom' }); n.addEventListener('input', () => { r.nom = n.value; });
+        const pc = h('input', { type: 'number', min: 0, max: 100, step: 0.5, value: r.part, style: { textAlign: 'right' } }); pc.addEventListener('input', () => { r.part = +pc.value || 0; });
+        const me = h('input', { type: 'radio', name: 'moi', checked: r.moi }); me.addEventListener('change', () => { rows.forEach((x) => { x.moi = false; }); r.moi = true; });
+        return h('tr', null, h('td', null, n), h('td', { style: { width: '120px' } }, pc), h('td', { style: { width: '90px', textAlign: 'center' } }, me), h('td', null, rows.length > 2 ? h('button', { class: 'btn sm ghost danger', onClick: () => { rows.splice(i, 1); draw(); } }, icon('trash', 14)) : null));
+      }))), h('button', { class: 'btn sm', style: { marginTop: '10px' }, onClick: () => { rows.push({ nom: '', part: 0, moi: false }); draw(); } }, icon('plus', 14), 'Ajouter un associé'));
+  };
+  draw();
+  const err = h('div', { class: 'err' });
+  const m = modal({ title: `Associés de « ${P.nom} »`, sub: 'Les noms servent à rattacher les apports et les retraits (champ Tiers des opérations).', width: 600, body: [box, err],
+    footer: [h('span', { class: 'sp' }), h('button', { class: 'btn', onClick: () => m.close() }, 'Annuler'), h('button', { class: 'btn primary lg', onClick: async () => {
+      const list = rows.filter((r) => r.nom.trim());
+      const total = sum(list, (r) => r.part);
+      if (list.length < 2) { err.textContent = 'Il faut au moins deux associés.'; return; }
+      if (Math.abs(total - 100) > 0.6) { err.textContent = `Les parts font ${Math.round(total * 10) / 10} % : elles doivent faire 100 %.`; return; }
+      if (!list.some((r) => r.moi)) { err.textContent = 'Indique lequel est toi.'; return; }
+      const associes = list.map((r) => ({ nom: r.nom.trim(), part: Math.round(r.part * 10) / 1000, moi: r.moi }));
+      const mine = associes.find((a) => a.moi);
+      if (await ops([upsert('projet', { ...P, part: mine.part, meta: { ...(P.meta || {}), associes } })], 'Associés enregistrés')) m.close();
+    } }, 'Enregistrer')] });
+}
+
+// ---------- Capital récupéré et projection ----------
+function capitalCard(P) {
+  const rec = capitalRecovery(S, P, { growth: R.growth });
+  const f = wOf(P.id), d = (v) => mad(v * (S.immoView === 'full' ? 1 : 1));
+  if (!(rec.apports > 0)) return h('div', { class: 'card' }, h('header', null, h('h2', null, `Capital récupéré${S.immoProjet ? '' : ' — ' + P.nom}`)), empty('Pas encore de capital enregistré', 'Saisis les « Apport en capital » des associés pour suivre la récupération du capital investi.'));
+  const growthSel = select([{ value: '0', label: 'Loyers stables' }, { value: '0.02', label: 'Loyers +2 % / an' }, { value: '0.03', label: 'Loyers +3 % / an' }, { value: '0.05', label: 'Loyers +5 % / an' }], String(R.growth));
+  growthSel.addEventListener('change', () => { R.growth = Number(growthSel.value); emit(); });
+  const cum = rec.series.filter((x) => !x.projected), proj = rec.series.filter((x) => x.projected);
+  const labels = rec.series.map((x) => ({ key: String(x.year), label: String(x.year), sub: x.projected ? 'prévu' : '', full: `${x.year}${x.projected ? ' (projection)' : ''}` }));
+  const pct1 = (v) => `${(v * 100).toFixed(1).replace('.', ',')} %`;
+  const pay = rec.years == null ? 'Pas de date : le cash-flow libre est nul ou négatif' : rec.years === 0 ? 'Capital entièrement récupéré' : `${rec.yearPayback} (dans ${rec.years.toFixed(1).replace('.', ',')} an${rec.years >= 2 ? 's' : ''})`;
+  return h('div', { class: 'card' }, h('header', null, h('h2', null, `Capital récupéré${S.immoProjet ? '' : ' — ' + P.nom}`), h('span', { class: 'sub' }, `depuis ${monthLabel(rec.start)} · montants du projet (100 %)`), h('div', { class: 'right' }, growthSel)),
+    h('div', { class: 'kpis', style: { marginBottom: '14px' } },
+      kpi({ title: 'Capital investi', ic: 'bank', value: mad(rec.apports), sub: [h('span', null, `≈ ${eur(rec.apports * S.P.taux)} — apports des associés`)] }),
+      kpi({ title: 'Déjà récupéré', ic: 'check', value: h('span', { class: 'pos' }, mad(rec.retraits)), sub: [h('span', { class: 'delta good' }, pct1(rec.pctRecovered)), h('span', null, `+ ${mad(Math.max(0, rec.tresorerie))} en caisse`)] }),
+      kpi({ title: 'Reste à récupérer', ic: 'alert', value: mad(rec.remaining), sub: [h('span', null, `rythme libre : ${mad(rec.annualFree)} / an`)] }),
+      kpi({ title: 'Retour complet estimé', ic: 'calendar', value: rec.years == null ? '—' : rec.years === 0 ? 'Fait' : String(rec.yearPayback), sub: [h('span', null, rec.years == null ? 'cash-flow libre ≤ 0' : rec.years === 0 ? '' : `dans ${rec.years.toFixed(1).replace('.', ',')} an${rec.years >= 2 ? 's' : ''}`)] })),
+    h('div', { class: 'thr', style: { margin: '0 0 6px' } }, h('div', { class: 'track' }, h('div', { class: 'seg1', style: { width: Math.min(100, rec.pctRecovered * 100) + '%' } }), h('div', { class: 'seg2', style: { width: Math.min(100 - Math.min(100, rec.pctRecovered * 100), Math.max(0, rec.tresorerie) / rec.apports * 100) + '%' } }))),
+    h('div', { class: 'legend', style: { flexWrap: 'wrap', marginBottom: '8px' } }, h('span', null, h('i', { style: { background: 'var(--flow-in)' } }), `Récupéré ${pct1(rec.pctRecovered)}`), h('span', null, h('i', { style: { background: 'var(--flow-out)' } }), `En caisse ${pct1(Math.max(0, rec.tresorerie) / rec.apports)}`), h('span', { style: { fontWeight: 700 } }, `Retour complet : ${pay}`)),
+    rec.series.length > 1 ? seriesChart({ labels, type: 'bar', fmt: mad, title: 'Capital récupéré par année', series: [
+      { name: 'Récupéré (cumulé)', color: 'var(--flow-in)', values: rec.series.map((x) => (x.projected ? 0 : x.value)) },
+      { name: 'Projection (récupéré + caisse + cash-flow libre)', color: '#5AC8FA', values: rec.series.map((x) => (x.projected ? x.value : 0)) }] }) : null,
+    h('div', { class: 'note', style: { marginTop: '8px' } }, `Méthode : récupéré = retraits des associés ; la trésorerie du compte compte comme récupérable ; rythme = cash-flow libre des 12 derniers mois complets (revenus − charges courantes − remboursements de prêts), éventuellement indexé. Estimation indicative : elle suppose que ce rythme se maintient.`));
+}
+
+// ---------- Analyses et recommandations ----------
+function insightsCard(P) {
+  const lots = S.lots.filter((l) => l.projetId === P.id);
+  const ins = projectInsights(S, P, { lots, balances: partnerBalances(S, P, assocOpts(P)), recovery: capitalRecovery(S, P, { growth: R.growth }) });
+  if (!ins.length) return null;
+  return h('div', { class: 'card' }, h('header', null, h('h2', null, `Analyses et recommandations${S.immoProjet ? '' : ' — ' + P.nom}`), h('span', { class: 'sub' }, 'calculées sur les 12 derniers mois')),
+    h('div', { class: 'insights' }, ins.map((i) => h('div', { class: 'insight ' + i.kind }, h('div', { class: 'it' }, h('span', null, i.title), h('span', { class: 'iv num' }, i.value || '')), h('p', null, i.text), i.advice ? h('div', { class: 'adv' }, '→ ' + i.advice) : null))));
+}
+
+// ---------- Lots (en fin de page : ils ne masquent plus les chiffres de suivi) ----------
+function lotsCard() {
+  const P = curProjet();
+  const lots = scopeLots();
+  const canEdit = (P ? isMine(P) : ownProjets().length > 0);
+  return h('div', { class: 'card' }, h('header', null, h('h2', null, 'Lots'), h('span', { class: 'sub' }, `${lots.length} lot${lots.length > 1 ? 's' : ''}${P ? ' · ' + P.nom : ''}`),
+    canEdit ? h('div', { class: 'right' }, h('button', { class: 'btn', onClick: () => openLot({ projetId: P ? P.id : undefined }) }, icon('plus', 16), 'Ajouter un lot')) : null),
+    lots.length ? h('div', { class: 'catgrid' }, lots.map((l) => h('button', { class: 'cat', onClick: () => (isMine(l) ? openLot(l) : null) }, `${lotCode(l.nom, l.code)} · ${shortLot(l.nom)}`, h('span', { class: 'muted' }, `${num0(l.loyer)} MAD`)))) : empty('Aucun lot', 'Ajoute les lots (appartements, locaux…) du projet.'));
 }
 
 // ---------- Projets : barre de sélection, fiches, partage ----------
@@ -242,10 +380,9 @@ function projectsBar() {
           : h('span', { class: 'sub' }, `Partagé par ${m ? m.owner_email : 'le propriétaire'} — lecture seule`)),
       mine ? h('div', { class: 'row-actions' },
         h('button', { class: 'btn primary', onClick: () => openShare(P) }, icon('user', 16), 'Partager'),
-        h('button', { class: 'btn', onClick: () => openLot({ projetId: P.id }) }, icon('plus', 16), 'Ajouter un lot'),
         h('button', { class: 'btn', onClick: () => openProjet(P) }, icon('edit', 16), 'Modifier'))
         : h('button', { class: 'btn ghost', onClick: async () => { if (!(await confirmBox(`Quitter le projet « ${P.nom} » ? Tu n’y auras plus accès (sauf nouvelle invitation).`, { ok: 'Quitter', danger: true }))) return; const { error } = await sb.rpc('remove_membre', { p_id: m.id }); if (error) return toast(error.message, 'error'); S.immoProjet = ''; savePrefs(); const { pull } = await import('../state.js'); await pull(); emit(); } }, 'Quitter ce projet')),
-    mine && lots.length ? h('div', { class: 'catgrid', style: { marginTop: '10px' } }, lots.map((l) => h('button', { class: 'cat', onClick: () => openLot(l) }, `${lotCode(l.nom) || l.code} · ${shortLot(l.nom)}`, h('span', { class: 'muted' }, `${num0(l.loyer)} MAD`)))) : null);
+    null);
 }
 
 function projectCard(p) {
@@ -266,16 +403,27 @@ function openProjet(p = {}) {
   const nom = h('input', { type: 'text', value: p.nom || '', placeholder: 'ex. Immeuble Amal 1' });
   const part = h('input', { type: 'number', min: 0, max: 100, step: 1, value: Math.round((p.part ?? 1) * 100) });
   const dev = select(CUR_CODES, p.devise || 'MAD');
+  const valeur = h('input', { type: 'number', min: 0, step: 1000, value: (p.meta && p.meta.valeur) || '', placeholder: 'facultatif' });
   const note = h('textarea', null, p.note || '');
   const err = h('div', { class: 'err' });
+  // suppression : deux confirmations successives, la 2ᵉ en recopiant le nom du projet (données sensibles)
+  const remove = async () => {
+    const nLots = S.lots.filter((l) => l.projetId === p.id).length, nTx = S.data.tx.filter((t) => t.projetId === p.id).length;
+    if (nLots) { toast(`Ce projet contient encore ${nLots} lot${nLots > 1 ? 's' : ''} : supprime d’abord ses lots (carte « Lots », en bas de page).`, 'error'); return; }
+    if (!(await confirmBox(`Supprimer le projet « ${p.nom} » ? Ses ${nTx} opération${nTx > 1 ? 's' : ''} ne seront plus prises en compte dans les calculs (récupérables dans Paramètres › Historique).`, { ok: 'Continuer', danger: true, title: 'Supprimer le projet ?' }))) return;
+    if (!(await confirmTyped(`Dernière confirmation. Tu es sur le point de supprimer le projet « ${p.nom} » et de retirer ses ${nTx} opération${nTx > 1 ? 's' : ''} de tous les calculs, sur tous tes appareils.`, p.nom, { ok: 'Supprimer définitivement', title: 'Confirmer la suppression' }))) return;
+    if (await ops([del('projet', p.id)], 'Projet supprimé')) { S.immoProjet = ''; savePrefs(); m.close(); }
+  };
   const m = modal({ title: editing ? `Projet « ${p.nom} »` : 'Nouveau projet immobilier', width: 520,
-    body: [field('Nom du projet', nom), h('div', { class: 'grid2' }, field('Ma part (%)', part, 'Ta quote-part : pondère le tableau de bord « Ma part »'), field('Devise', dev)), field('Note', note), err],
-    footer: [editing ? h('button', { class: 'btn danger', onClick: async () => { if (await confirmBox(`Supprimer le projet « ${p.nom} » ? Ses ${S.data.tx.filter((t) => t.projetId === p.id).length} opérations ne seront plus prises en compte dans les calculs. (Possible seulement s’il ne contient plus de lots.)`, { ok: 'Supprimer', danger: true })) { if (await ops([del('projet', p.id)], 'Projet supprimé')) { S.immoProjet = ''; savePrefs(); m.close(); } } } }, icon('trash', 15), 'Supprimer') : null,
+    body: [field('Nom du projet', nom), h('div', { class: 'grid2' }, field('Ma part (%)', part, 'Ta quote-part : pondère le tableau de bord « Ma part »'), field('Devise', dev)),
+      field('Valeur estimée actuelle du bien (MAD)', valeur, 'Sert aux analyses (plus-value latente, rendement sur la valeur). À mettre à jour chaque année.'), field('Note', note), err],
+    footer: [editing ? h('button', { class: 'btn danger', onClick: remove }, icon('trash', 15), 'Supprimer') : null,
       h('span', { class: 'sp' }), h('button', { class: 'btn', onClick: () => m.close() }, 'Annuler'),
       h('button', { class: 'btn primary lg', onClick: async () => {
         if (!nom.value.trim()) { err.textContent = 'Nom obligatoire.'; return; }
         const id = p.id || crypto.randomUUID();
-        if (await ops([upsert('projet', { ...p, id: p.id ? p.id : 0, ...(p.id ? {} : { id }), nom: nom.value.trim(), part: Math.min(100, Math.max(0, +part.value || 0)) / 100, devise: dev.value, note: note.value.trim(), type: 'Immobilier' })], editing ? 'Projet modifié' : 'Projet créé')) {
+        const meta = { ...(p.meta || {}) }; if (+valeur.value > 0) meta.valeur = +valeur.value; else delete meta.valeur;
+        if (await ops([upsert('projet', { ...p, id: p.id ? p.id : 0, ...(p.id ? {} : { id }), nom: nom.value.trim(), part: Math.min(100, Math.max(0, +part.value || 0)) / 100, devise: dev.value, note: note.value.trim(), type: 'Immobilier', meta })], editing ? 'Projet modifié' : 'Projet créé')) {
           if (!editing) { S.immoProjet = id; savePrefs(); emit(); }
           m.close();
         }
@@ -287,12 +435,18 @@ export function openLot(l = {}) {
   const projs = ownProjets();
   if (!projs.length) return toast('Crée d’abord un projet.', 'error');
   const proj = select(projs.map((p) => ({ value: p.id, label: p.nom })), l.projetId || S.immoProjet || projs[0].id);
-  const code = h('input', { type: 'text', value: l.code || '', placeholder: '11' }), nom = h('input', { type: 'text', value: l.nom || '', placeholder: '11. 1er étage (Côté rue)' });
+  const next = () => nextLotCode(proj.value);
+  const code = h('input', { type: 'text', value: l.code || '', placeholder: `automatique (${next()})`, inputmode: 'numeric' });
+  const nom = h('input', { type: 'text', value: l.nom || '', placeholder: 'ex. 2ᵉ étage côté rue' });
   const loyer = h('input', { type: 'number', value: l.loyer || '', step: 50 });
-  const m = modal({ title: editing ? 'Modifier le lot' : 'Nouveau lot', width: 500, body: [field('Projet', proj, editing ? 'Changer de projet déplace aussi ses locataires et ses opérations.' : null), h('div', { class: 'grid2' }, field('Code', code), field('Loyer de référence (MAD)', loyer)), field('Nom du lot', nom)],
+  proj.addEventListener('change', () => { code.placeholder = `automatique (${next()})`; });
+  const m = modal({ title: editing ? 'Modifier le lot' : 'Nouveau lot', width: 500, body: [field('Projet', proj, editing ? 'Changer de projet déplace aussi ses locataires et ses opérations.' : null),
+    field('Nom du lot', nom, editing ? null : 'Saisis seulement le nom : le code est attribué automatiquement.'),
+    h('div', { class: 'grid2' }, field('Loyer de référence (MAD)', loyer), field('Code', code, editing ? null : 'Laisse vide : code suivant automatique'))],
     footer: [editing ? h('button', { class: 'btn danger', onClick: async () => { if (await confirmBox('Supprimer ce lot ?', { ok: 'Supprimer', danger: true })) { if (await ops([del('lot', l.id)], 'Lot supprimé')) m.close(); } } }, icon('trash', 15), 'Supprimer') : null,
       h('span', { class: 'sp' }), h('button', { class: 'btn', onClick: () => m.close() }, 'Annuler'),
       h('button', { class: 'btn primary lg', onClick: async () => { if (!nom.value.trim()) return toast('Nom obligatoire', 'error'); if (await ops([upsert('lot', { id: l.id || 0, version: l.version, code: code.value.trim(), nom: nom.value.trim(), loyer: +loyer.value || 0, projetId: proj.value })], 'Lot enregistré')) m.close(); } }, 'Enregistrer')] });
+  setTimeout(() => nom.focus(), 40);
 }
 
 function openShare(p) {
@@ -330,44 +484,62 @@ function openShare(p) {
     footer: [h('span', { class: 'sp' }), h('button', { class: 'btn', onClick: () => m.close() }, 'Fermer')] });
 }
 
-// ---------- Relance d'un locataire (SMS / WhatsApp, envoyée par toi) ----------
+// ---------- Messages aux locataires (WhatsApp / SMS, envoyés par toi) ----------
 const MOIS_AR = ['يناير', 'فبراير', 'مارس', 'أبريل', 'ماي', 'يونيو', 'يوليوز', 'غشت', 'شتنبر', 'أكتوبر', 'نونبر', 'دجنبر'];
-function relanceText(lang, ten, month, amount) {
-  const m = +month.slice(5, 7) - 1, y = month.slice(0, 4);
-  const amt = Math.round(amount).toLocaleString('fr-FR').replace(/ /g, ' ');
-  if (lang === 'ar') return `السلام عليكم ${ten.nom}،\nنذكركم بأداء واجب الكراء لشهر ${MOIS_AR[m]} ${y} بمبلغ ${amt} درهم.\nالمرجو تسوية المبلغ في أقرب الآجال.\nشكرا جزيلا.`;
-  return `Bonjour ${ten.nom},\nNous vous rappelons le paiement du loyer de ${monthLong(month)} (${amt} MAD).\nMerci de le régler dès que possible.\nCordialement.`;
+const KINDS = [{ value: 'relance', label: 'Relance de loyer impayé' }, { value: 'echeance', label: 'Rappel avant échéance' }, { value: 'merci', label: 'Confirmation de paiement' }, { value: 'libre', label: 'Message libre' }];
+function messageText(kind, lang, ten, month, amount) {
+  const m = +(month || todayMonth()).slice(5, 7) - 1, y = (month || todayMonth()).slice(0, 4);
+  const amt = Math.round(amount || ten.loyer || 0).toLocaleString('fr-FR').replace(/\s/g, ' ');
+  const ar = lang === 'ar';
+  if (kind === 'libre') return ar ? `السلام عليكم ${ten.nom}،\n` : `Bonjour ${ten.nom},\n`;
+  if (kind === 'echeance') return ar ? `السلام عليكم ${ten.nom}،\nتذكير ودي: واجب الكراء لشهر ${MOIS_AR[m]} ${y} (${amt} درهم) يؤدى قبل 5 من الشهر.\nشكرا.` : `Bonjour ${ten.nom},\nPetit rappel : le loyer de ${monthLong(month || todayMonth())} (${amt} MAD) est à régler avant le 5 du mois.\nMerci et bonne journée.`;
+  if (kind === 'merci') return ar ? `السلام عليكم ${ten.nom}،\nتوصلنا بواجب الكراء لشهر ${MOIS_AR[m]} ${y}. شكرا جزيلا.` : `Bonjour ${ten.nom},\nNous avons bien reçu le loyer de ${monthLong(month || todayMonth())}. Merci beaucoup.`;
+  return ar ? `السلام عليكم ${ten.nom}،\nنذكركم بأداء واجب الكراء لشهر ${MOIS_AR[m]} ${y} بمبلغ ${amt} درهم.\nالمرجو تسوية المبلغ في أقرب الآجال.\nشكرا جزيلا.` : `Bonjour ${ten.nom},\nNous vous rappelons le paiement du loyer de ${monthLong(month)} (${amt} MAD).\nMerci de le régler dès que possible.\nCordialement.`;
 }
 const phoneDigits = (p) => String(p || '').replace(/[^\d+]/g, '').replace(/^00/, '+').replace(/^0(?=[67])/, '+212');
-export function openRelance(ten, month, amount) {
+const validPhone = (num) => /^\+?\d{8,15}$/.test(num);
+function sendUrl(canal, num, text) {
+  const body = encodeURIComponent(text);
+  return canal === 'SMS' ? `sms:${num}${/iPhone|iPad|Mac/.test(navigator.userAgent) ? '&' : '?'}body=${body}` : `https://wa.me/${num.replace('+', '')}?text=${body}`;
+}
+async function logMessage(ten, canal, label) {
+  const line = `${label} (${canal}) le ${new Date().toLocaleDateString('fr-FR')}`;
+  await ops([upsert('tenant', { ...ten, note: [line, ten.note].filter(Boolean).join('\n') })]);
+}
+// Envoi en un clic avec le texte de relance (arabe par défaut, comme les locataires)
+function quickSend(ten, canal, month, amount) {
+  const num = phoneDigits(ten.contact);
+  if (!validPhone(num)) { toast(`Pas de numéro valide pour ${ten.nom} : ouvre « Personnaliser » pour le saisir.`, 'error'); openMessage(ten, { kind: 'relance', month, amount }); return; }
+  window.open(sendUrl(canal, num, messageText('relance', 'ar', ten, month, amount)), canal === 'SMS' ? '_self' : '_blank');
+  logMessage(ten, canal, `Relance loyer ${monthLong(month)} ${Math.round(amount)} MAD`);
+}
+export function openMessage(ten, { kind = 'libre', month = todayMonth(), amount = 0 } = {}) {
   if (!isMine(ten)) return toast('Projet partagé en lecture seule.', 'error');
-  let lang = 'ar';
+  const st = { lang: 'ar', kind };
   const phone = h('input', { type: 'tel', value: phoneDigits(ten.contact), placeholder: '+2126…' });
-  const text = h('textarea', { rows: 6, dir: 'auto', style: { fontSize: '16px' } }, relanceText(lang, ten, month, amount));
-  const langSeg = segmented([{ value: 'ar', label: 'العربية' }, { value: 'fr', label: 'Français' }], lang, (v) => { lang = v; text.value = relanceText(v, ten, month, amount); });
+  const text = h('textarea', { rows: 6, dir: 'auto', style: { fontSize: '16px' } }, messageText(st.kind, st.lang, ten, month, amount));
+  const refill = () => { text.value = messageText(st.kind, st.lang, ten, month, amount); };
+  const langSeg = segmented([{ value: 'ar', label: 'العربية' }, { value: 'fr', label: 'Français' }], st.lang, (v) => { st.lang = v; refill(); });
+  const kindSel = select(KINDS, st.kind); kindSel.addEventListener('change', () => { st.kind = kindSel.value; refill(); });
   const log = h('input', { type: 'checkbox', checked: true });
-  const note = async (canal) => {
-    if (!log.checked) return;
-    const line = `Relance ${canal} du ${new Date().toLocaleDateString('fr-FR')} (loyer ${monthLong(month)}, ${Math.round(amount)} MAD)`;
-    await ops([upsert('tenant', { ...ten, note: [line, ten.note].filter(Boolean).join('\n') })]);
-  };
   const go = async (canal) => {
     const num = phoneDigits(phone.value);
-    if (!/^\+?\d{8,15}$/.test(num)) return toast('Numéro de téléphone invalide.', 'error');
-    const body = encodeURIComponent(text.value);
-    const url = canal === 'SMS' ? `sms:${num}${/iPhone|iPad|Mac/.test(navigator.userAgent) ? '&' : '?'}body=${body}` : `https://wa.me/${num.replace('+', '')}?text=${body}`;
-    window.open(url, canal === 'SMS' ? '_self' : '_blank');
-    await note(canal);
+    if (!validPhone(num)) return toast('Numéro de téléphone invalide (ex. +212 6 12 34 56 78).', 'error');
+    window.open(sendUrl(canal, num, text.value), canal === 'SMS' ? '_self' : '_blank');
+    if (log.checked) await logMessage(ten, canal, KINDS.find((k) => k.value === st.kind).label);
+    if (!ten.contact && num) await ops([upsert('tenant', { ...ten, contact: num })]);   // le numéro saisi est conservé dans la fiche
     m.close();
   };
-  const m = modal({ title: `Relancer ${ten.nom}`, sub: `${shortLot(ten.lot)} · loyer de ${monthLong(month)} · ${mad(amount)} attendus`, width: 520, body: [
+  const m = modal({ title: `Message à ${ten.nom}`, sub: `${shortLot(ten.lot)} · ${monthLong(month)}${amount ? ' · ' + mad(amount) + ' attendus' : ''}`, width: 520, body: [
+    field('Type de message', kindSel),
     h('div', { class: 'split' }, h('span', { class: 'lbl' }, 'Langue du message'), langSeg),
-    field('Téléphone du locataire', phone, ten.contact ? null : 'Aucun numéro dans la fiche : saisis-le (il sera conservé si tu le notes dans la fiche).'),
+    field('Téléphone du locataire', phone, ten.contact ? null : 'Aucun numéro dans la fiche : saisis-le, il y sera conservé.'),
     field('Message (modifiable)', text),
-    h('label', { class: 'split', style: { fontSize: '13px' } }, log, 'Noter la relance dans la fiche du locataire'),
-    h('div', { class: 'note' }, 'Le message s’ouvre dans Messages ou WhatsApp : c’est toi qui appuies sur Envoyer.')],
+    h('label', { class: 'split', style: { fontSize: '13px' } }, log, 'Noter l’envoi dans la fiche du locataire'),
+    h('div', { class: 'note' }, 'Le message s’ouvre dans WhatsApp ou Messages : c’est toi qui appuies sur Envoyer.')],
   footer: [h('span', { class: 'sp' }), h('button', { class: 'btn', onClick: () => go('WhatsApp') }, icon('message', 16), 'WhatsApp'), h('button', { class: 'btn primary lg', onClick: () => go('SMS') }, icon('send', 16), 'SMS')] });
 }
+export function openRelance(ten, month, amount) { return openMessage(ten, { kind: 'relance', month, amount }); }
 // Loyers impayés d'un locataire (mois en retard / partiels sur 6 mois)
 export function unpaidOf(ten) {
   const cur = todayMonth(), out = [];

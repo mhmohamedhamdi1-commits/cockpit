@@ -26,7 +26,8 @@ export function resolveBareme(annee, { table = [], indexation = DEFAULT_INDEXATI
   annee = Math.round(num(annee));
   const rows = (table || []).filter((r) => r && r.data && typeof r.data === 'object');
   const known = new Map(Object.entries(BAREMES).map(([y, b]) => [Number(y), b]));
-  for (const r of rows) if (Array.isArray(r.data.tranches)) known.set(Number(r.annee), { ...clone(r.data), annee: Number(r.annee), statut: r.statut || 'officiel', source: r.source || 'table bareme_fiscal' });
+  const complet = (d) => Array.isArray(d.tranches) && d.qf && d.decote && d.abattement10 && d.micro && d.per && d.ps;   // ligne complète = nouveau barème ; sinon simple correctif
+  for (const r of rows) if (complet(r.data)) known.set(Number(r.annee), { ...clone(r.data), annee: Number(r.annee), statut: r.statut || 'officiel', source: r.source || 'table bareme_fiscal' });
   const years = [...known.keys()].sort((a, b) => a - b);
   const apply = (base) => {
     const row = rows.find((r) => Number(r.annee) === base.annee);
@@ -153,7 +154,7 @@ export function computeTax(input, B) {
     if (e.versementLiberatoire) vlBase += b; else benefBareme += b;
     cotisTns += pos(e.cotisationsDeductibles);
     divEnt += pos(e.dividendesBruts);
-    for (const n of e.notes || []) if (n) warnings.push(`${e.nom || 'Entreprise'} : ${n}`);
+    for (const n of e.notes || []) if (n) warnings.push(e.nom && !String(n).startsWith(e.nom) ? `${e.nom} : ${n}` : n);
   }
   // --- Revenus fonciers France
   let fonFr = 0, fonFrPS = 0, fonFrNote = '';

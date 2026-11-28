@@ -53,6 +53,20 @@ async function loadHistory(syms) {
 
 export const portfolioNow = () => portfolio(ordres(), M.quotes, fxOf);
 
+// Valeur du portefeuille à une date (cours historiques hebdomadaires ; cours du jour pour aujourd'hui)
+export function valueAt(at) {
+  const os = ordres().filter((o) => o.date <= at);
+  if (!os.length) return 0;
+  const q = {};
+  for (const s of new Set(os.map((o) => o.symbole))) {
+    let c = null;
+    for (const x of M.hist[s] || []) { if (x.d <= at) c = x.c; else break; }
+    if (at >= S.today && M.quotes[s]) c = M.quotes[s].prix;
+    if (c != null) q[s] = { prix: c, devise: (M.quotes[s] || {}).devise || (os.find((o) => o.symbole === s) || {}).devise || 'EUR' };
+  }
+  return portfolio(os, q, fxOf).total.value;
+}
+
 // ---------- secteurs ----------
 export const SECTEURS_FR = {
   'Technology': 'Technologie', 'Communication Services': 'Communication & médias', 'Consumer Cyclical': 'Consommation cyclique', 'Consumer Defensive': 'Consommation de base',

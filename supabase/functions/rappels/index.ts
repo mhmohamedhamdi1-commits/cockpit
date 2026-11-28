@@ -68,6 +68,20 @@ async function ensureFx(today: string) {
   return error ? { error: error.message } : { ...fx, comptes_mis_a_jour: n };
 }
 
+// Taux du jour pour les autres devises (USD, GBP, CHF) : « x/EUR » = valeur d'1 unité en euros
+async function ensureFxOthers(today: string) {
+  const pairs = ['USD', 'GBP', 'CHF'];
+  const { data } = await admin.from('fx_rates').select('pair').eq('date', today).in('pair', pairs.map((c) => `${c}/EUR`));
+  const missing = pairs.filter((c) => !(data || []).some((d: any) => d.pair === `${c}/EUR`));
+  if (!missing.length) return null;
+  try {
+    const j = await (await fetch('https://open.er-api.com/v6/latest/EUR', { signal: AbortSignal.timeout(10000) })).json();
+    const rows = missing.map((c) => (j.rates && j.rates[c] > 0 ? { date: today, pair: `${c}/EUR`, rate: 1 / j.rates[c], source: 'open.er-api.com' } : null)).filter(Boolean);
+    if (rows.length) await admin.from('fx_rates').upsert(rows);
+    return { autres_devises: rows.length };
+  } catch (e) { console.error('fx autres', e); return { error: (e as Error).message }; }
+}
+
 type Note = { key: string; title: string; body: string; url: string; tag?: string };
 
 async function compute(uid: string, now: ReturnType<typeof paris>, forceHour?: number) {
@@ -115,6 +129,15 @@ async function compute(uid: string, now: ReturnType<typeof paris>, forceHour?: n
         if (inDays === 0) notes.push({ key: `rappel:${r.id}:${next}:J`, title: `Aujourd’hui : ${r.titre}`, body: r.note || 'Échéance du jour.', url: '/#/recurring', tag: 'rappel-' + r.id });
         else if (r.avance > 0 && inDays === r.avance) notes.push({ key: `rappel:${r.id}:${next}:avant`, title: `Dans ${inDays} jours : ${r.titre}`, body: `Échéance le ${next.split('-').reverse().join('/')}. ${r.note || ''}`.trim(), url: '/#/recurring', tag: 'rappel-' + r.id });
       }
+    }
+    if (P.notif('elec')) {
+      // facture d'électricité : du 1er au 3 de chaque mois, une notification par jour jusqu'à ce que le paiement soit saisi
+      const el = core.elecDue(ctx);
+      if (el.due) notes.push({ key: `elec:${today}`, title: 'Facture d’électricité à payer', body: `Du ${el.from} au ${el.to} du mois : règle la facture de l’immeuble, puis saisis la dépense (Eau & électricité) pour arrêter le rappel.`, url: '/#/ops?new=1', tag: 'elec' });
+    }
+    if (P.notif('imports') && now.weekday === 'Mon') {
+      const n = (data.import_lignes as any[] || []).filter((l: any) => l.statut === 'attente').length;
+      if (n) notes.push({ key: `imports:${week}`, title: `${n} opération${n > 1 ? 's' : ''} à valider`, body: 'Importées depuis ton relevé bancaire : valide-les pour les intégrer à tes calculs.', url: '/#/imports', tag: 'imports' });
     }
     for (const id of ['seuil_tva_maj', 'seuil_tva', 'seuil_micro']) {
       const a = byId(id);
@@ -173,6 +196,7 @@ Deno.serve(async (req) => {
   if (CRON_SECRET && req.headers.get('x-cron-secret') === CRON_SECRET) {
     const now = paris();
     const fx = await ensureFx(now.date).catch((e) => ({ error: e.message }));
+    const fx2 = await ensureFxOthers(now.date).catch((e) => ({ error: e.message }));
     const { data: users } = await admin.from('push_subscriptions').select('user_id');
     const ids = [...new Set((users || []).map((u: any) => u.user_id))];
     const report: unknown[] = [];
@@ -188,7 +212,7 @@ Deno.serve(async (req) => {
         report.push({ notes: notes.length, sent: n });
       } catch (e: any) { console.error(e); report.push({ error: e.message }); }
     }
-    return json({ ok: true, at: now, fx, report });
+    return json({ ok: true, at: now, fx, fx2, report });
   }
 
   // --- test depuis l'application ---

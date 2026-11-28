@@ -74,7 +74,7 @@ test('veuf avec enfant : bénéficie d\'office de la part de parent isolé', () 
 test('nombre de parts : couple + 3 enfants = 4 ; garde alternée = moitié ; case L', () => {
   assert.equal(computeParts({ situation: 'marie', enfantsCharge: 3 }).total, 4);
   assert.equal(computeParts({ situation: 'celibataire', enfantsAlternee: 2 }).total, 1.5);
-  assert.equal(computeParts({ situation: 'celibataire', enfantsCharge: 1, enfantsAlternee: 1 }).total, 2);
+  assert.equal(computeParts({ situation: 'celibataire', enfantsCharge: 1, enfantsAlternee: 1 }).total, 1.75);
   assert.equal(computeParts({ situation: 'celibataire', elevéSeul5ans: 1 }).total, 1.5);
   assert.equal(computeParts({ situation: 'marie', demiPartsExtra: 0.5 }).total, 2.5);
 });

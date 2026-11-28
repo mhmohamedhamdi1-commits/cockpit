@@ -47,6 +47,23 @@ export function confirmBox(message, { ok = 'Confirmer', danger = false, title = 
   });
 }
 
+// Confirmation « forte » : il faut recopier un texte (ex. le nom du projet) pour pouvoir confirmer
+export function confirmTyped(message, expected, { ok = 'Supprimer définitivement', title = 'Confirmation' } = {}) {
+  return new Promise((res) => {
+    let done = false;
+    const fin = (v) => { if (!done) { done = true; res(v); } };
+    const input = h('input', { type: 'text', placeholder: expected, autocomplete: 'off', 'aria-label': 'Recopie le texte pour confirmer' });
+    const go = h('button', { class: 'btn danger', disabled: true, onClick: () => { fin(true); m.close(); } }, ok);
+    const same = () => input.value.trim().toLowerCase() === String(expected).trim().toLowerCase();
+    input.addEventListener('input', () => { go.disabled = !same(); });
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && same()) { fin(true); m.close(); } });
+    const m = modal({ title, width: 470, onClose: () => fin(false),
+      body: [h('div', { class: 'infobox', style: { background: 'var(--crit-bg)', color: 'var(--crit-ink)' } }, message), h('div', { class: 'field' }, h('label', null, `Pour confirmer, recopie : ${expected}`), input)],
+      footer: [h('span', { class: 'sp' }), h('button', { class: 'btn', onClick: () => m.close() }, 'Annuler'), go] });
+    setTimeout(() => input.focus(), 60);
+  });
+}
+
 // ---------- Popover ----------
 export function popover(anchor, content, { align = 'left' } = {}) {
   document.querySelectorAll('.pop').forEach((p) => p.remove());

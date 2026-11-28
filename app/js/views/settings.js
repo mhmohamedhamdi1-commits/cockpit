@@ -124,6 +124,7 @@ const NOTIFS = [
   ['factures', 'Factures en retard / à envoyer'], ['jours', 'Jours travaillés en fin de mois (17 h)'], ['loyers', 'Loyers en retard / à encaisser'],
   ['saisie', 'Rappel de saisie (20 h)'], ['recurrents', 'Opérations récurrentes à générer'], ['releve', 'Relevé de soldes de fin de mois'],
   ['echeances', 'Échéances (URSSAF, impôts, CFE…)'], ['provision', 'Montant à mettre de côté après une facture payée'],
+  ['elec', 'Facture d’électricité de l’immeuble (du 1er au 3 du mois)'], ['imports', 'Opérations importées à valider (lundi)'], ['declarations', 'Échéances de déclaration des entreprises'],
 ];
 function notifCard() {
   const P = Object.fromEntries(S.data.params.map((p) => [p.cle, p.valeur]));

@@ -52,4 +52,27 @@ for (const [dev, opts] of [['bureau', { viewport: { width: 1440, height: 1000 } 
   ok(errs.length === 0, `${dev} : aucune erreur JS ${errs.join(' | ')}`);
   await ctx.close();
 }
+
+// ---- PDF dans le navigateur, avec la VRAIE politique de sécurité du site (script-src 'self'; worker-src 'self') ----
+{
+  const fs = await import('node:fs');
+  const csp = fs.readFileSync(path.join(DIST, '_headers'), 'utf8').match(/Content-Security-Policy: (.*)/)[1];
+  const ctx = await b.newContext({ viewport: { width: 1300, height: 900 } }); const db = buildMockDb({ withBackup: false });
+  await installMockApi(ctx, db);
+  await ctx.route(`${srv.url}/**`, async (route) => { const r = await route.fetch(); await route.fulfill({ response: r, headers: { ...r.headers(), 'content-security-policy': csp } }); });
+  await ctx.addInitScript(sessionInit, makeSession(), { lang: 'fr' });
+  const p = await ctx.newPage(); const errs = [];
+  p.on('pageerror', (e) => errs.push(e.message)); p.on('console', (m) => { if (m.type() === 'error' && !/WebSocket|realtime|Failed to fetch|favicon|status of 404/i.test(m.text())) errs.push(m.text().slice(0, 300)); });
+  const mk = await ctx.newPage();
+  await mk.setContent(`<html><body style="font-family:Arial;font-size:11px"><h1>EUR Statement</h1><table style="width:100%"><thead><tr><th style="text-align:left;white-space:nowrap">Date</th><th style="text-align:left">Description</th><th style="text-align:right;white-space:nowrap">Money out</th><th style="text-align:right;white-space:nowrap">Money in</th><th style="text-align:right;white-space:nowrap">Balance</th></tr></thead><tbody>
+    <tr><td style="white-space:nowrap">Nov 3, 2026</td><td>Lidl Paris 11</td><td style="text-align:right">€23.40</td><td></td><td style="text-align:right">€1,476.60</td></tr>
+    <tr><td style="white-space:nowrap">Nov 5, 2026</td><td>Salaire LVMH</td><td></td><td style="text-align:right">€3,150.00</td><td style="text-align:right">€4,626.60</td></tr></tbody></table></body></html>`);
+  fs.writeFileSync('/tmp/releve-test.pdf', await mk.pdf({ format: 'A4' })); await mk.close();
+  await p.goto(`${srv.url}/#/imports`); await p.waitForSelector('.imp-drop');
+  await p.setInputFiles('input.imp-file', '/tmp/releve-test.pdf');
+  await p.waitForSelector('.imp-preview, .imp-err', { timeout: 20000 });
+  ok(await p.locator('.imp-preview').count() === 1, `PDF : lu dans le navigateur sous la CSP du site ${errs.join(' | ')} ${(await p.locator('.imp-err').allInnerTexts()).join('')}`);
+  if (await p.locator('.imp-preview').count()) ok((await p.innerText('.imp-stats')).startsWith('2'), 'PDF : 2 lignes lues');
+  await ctx.close();
+}
 await b.close(); srv.close(); process.exit(fail ? 1 : 0);

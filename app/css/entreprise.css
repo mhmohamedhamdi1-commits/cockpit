@@ -1,1 +1,84 @@
-/* Styles de l'écran « entreprise » */
+/* ============ Écran Entreprise ============ */
+.ent-bar { padding: 14px 16px; }
+.ent-head { padding-top: 16px; }
+.ent-welcome { text-align: center; padding: 36px 20px; }
+
+/* Avant le démarrage */
+.ent-launch .ent-count { display: flex; align-items: baseline; gap: 8px; margin: 2px 0 14px; }
+.ent-launch .ent-count b { font-size: 44px; font-weight: 760; letter-spacing: -.04em; line-height: 1; color: var(--accent); }
+.ent-launch .ent-count span { font-size: 15px; color: var(--ink-2); font-weight: 600; }
+.ent-check { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 18px; }
+.ent-check label { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-radius: 12px; cursor: pointer; }
+.ent-check label:hover { background: var(--hover); }
+.ent-check input { margin-top: 3px; width: 17px; height: 17px; flex: none; accent-color: var(--accent); }
+.ent-check b { display: block; font-size: 13.5px; font-weight: 600; }
+.ent-check small { display: block; color: var(--ink-3); font-size: 12px; margin-top: 1px; }
+@media (max-width: 900px) { .ent-check { grid-template-columns: 1fr; } }
+
+/* Planning de déclarations */
+.ent-decl { display: flex; flex-direction: column; }
+.ent-decl-row { display: grid; grid-template-columns: 62px minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 10px 4px; border-bottom: 1px solid var(--line-2); }
+.ent-decl-row:last-child { border-bottom: 0; }
+.ent-decl-row .dt { text-align: center; line-height: 1.15; }
+.ent-decl-row .dt b { display: block; font-size: 14px; font-weight: 700; }
+.ent-decl-row .dt span { font-size: 11px; color: var(--ink-3); }
+.ent-decl-row .tx b { font-size: 13.5px; font-weight: 600; display: block; }
+.ent-decl-row .tx small { color: var(--ink-3); font-size: 12px; display: block; }
+.ent-decl-row .ac { display: flex; gap: 6px; justify-content: flex-end; }
+.ent-decl-row.late .dt b { color: var(--crit-ink); }
+.ent-decl-row.done .tx b { color: var(--ink-3); text-decoration: line-through; text-decoration-color: var(--line); }
+@media (max-width: 760px) {
+  .ent-decl-row { grid-template-columns: 52px minmax(0, 1fr); }
+  .ent-decl-row .st { grid-column: 2; }
+  .ent-decl-row .ac { grid-column: 2; justify-content: flex-start; }
+}
+
+/* Dividendes / charges */
+.ent-div { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line-2); display: flex; flex-direction: column; gap: 6px; }
+
+/* Facturation électronique */
+.ent-ei { display: flex; gap: 12px; align-items: flex-start; padding: 8px 0; }
+.ent-ei i { width: 24px; height: 24px; border-radius: 50%; background: var(--hover); color: var(--ink-3); display: grid; place-items: center; flex: none; margin-top: 1px; }
+.ent-ei i.ok { background: var(--good-bg); color: var(--good-ink); }
+.ent-ei b { display: block; font-size: 13.5px; }
+.ent-ei small { display: block; color: var(--ink-3); font-size: 12.5px; margin-top: 1px; }
+
+/* Assistant de création */
+.ent-steps { display: flex; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
+.ent-step { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface); font-weight: 600; font-size: 13px; color: var(--ink-2); cursor: pointer; }
+.ent-step b { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--hover); font-size: 12px; }
+.ent-step.on { border-color: var(--accent); color: var(--ink); }
+.ent-step.on b { background: var(--accent); color: var(--accent-ink); }
+.ent-step.done b { background: var(--good-bg); color: var(--good-ink); }
+.ent-toggle { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 14px; }
+.ent-toggle b { font-size: 13.5px; display: block; }
+.ent-toggle .sub { display: block; color: var(--ink-3); font-size: 12.5px; margin-top: 2px; }
+.ent-preview { background: var(--surface-2); border-radius: 14px; padding: 12px 14px; }
+.ent-list { margin: 6px 0 8px; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; color: var(--ink-2); font-size: 13px; }
+
+/* Facture imprimable */
+.invoice-print { background: #fff; color: #111; border: 1px solid var(--line); border-radius: 8px; padding: 36px 40px; font-size: 13.5px; line-height: 1.45; }
+.invoice-print h1 { font-size: 22px; margin: 0 0 2px; }
+.invoice-print .ip-sub { color: #666; font-size: 12.5px; }
+.invoice-print .ip-head { display: flex; justify-content: space-between; gap: 20px; margin-bottom: 26px; }
+.invoice-print .ip-num { text-align: right; }
+.invoice-print .ip-num b { font-size: 17px; display: block; margin-bottom: 4px; }
+.invoice-print .ip-client { background: #f6f6f8; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; max-width: 360px; }
+.invoice-print .ip-client .lbl { color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+.invoice-print .ip-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+.invoice-print .ip-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #666; border-bottom: 2px solid #111; padding: 6px 4px; }
+.invoice-print .ip-table td { padding: 10px 4px; border-bottom: 1px solid #ddd; }
+.invoice-print .r { text-align: right; }
+.invoice-print .ip-tot { margin-left: auto; width: 300px; display: flex; flex-direction: column; gap: 4px; margin-bottom: 22px; }
+.invoice-print .ip-tot div { display: flex; justify-content: space-between; }
+.invoice-print .ip-tot .big { font-size: 16px; font-weight: 700; border-top: 2px solid #111; padding-top: 6px; margin-top: 2px; }
+.invoice-print .ip-mentions { font-size: 11.5px; color: #555; margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 2px; }
+@media (max-width: 700px) { .invoice-print { padding: 18px; } .invoice-print .ip-head { flex-direction: column; } .invoice-print .ip-num { text-align: left; } .invoice-print .ip-tot { width: 100%; } }
+@media print {
+  body.print-invoice #app, body.print-invoice .toasts, body.print-invoice .pop { display: none !important; }
+  body.print-invoice .overlay { position: static; background: #fff; backdrop-filter: none; padding: 0; display: block; animation: none; }
+  body.print-invoice .modal { box-shadow: none; max-width: none; border: 0; background: #fff; }
+  body.print-invoice .modal > header, body.print-invoice .modal > footer { display: none; }
+  body.print-invoice .modal .body { padding: 0; overflow: visible; }
+  body.print-invoice .invoice-print { border: 0; padding: 0; }
+}
