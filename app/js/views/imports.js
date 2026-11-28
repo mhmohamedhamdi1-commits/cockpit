@@ -69,6 +69,7 @@ async function onFile(file) {
     if (res.error) im.error = res.error;
     else {
       im.parsed = res;
+      if (res.holder && !im.ownName.trim()) im.ownName = res.holder.toLowerCase().replace(/(^|[\s'-])([a-zà-ÿ])/g, (m, a, b) => a + b.toUpperCase());   // titulaire lu sur le PDF : repère les virements entre ses propres comptes
       // un relevé Revolut Business concerne en général l'entreprise
       if (res.format.includes('business') && !im.touchedAct && entreprises().length) { im.activite = 'Entreprise'; im.projetId = defaultProjet('Entreprise'); }
       if (res.accounts && res.accounts.length === 1 && (!im.compte || im.compte === 'Revolut')) im.compte = `Revolut ${res.accounts[0]}`;
