@@ -42,13 +42,27 @@ export const randomB64 = (n = 32) => crypto.randomBytes(n).toString('base64');
 export const randomHex = (n = 32) => crypto.randomBytes(n).toString('hex');
 
 // ---------- API de gestion Supabase ----------
-export async function mgmt(env, method, p, body) {
+// Le .env peut contenir plusieurs SUPABASE_ACCESS_TOKEN (un par compte : prod et dev). Si le jeton courant n'a pas les droits
+// sur le projet visé (403), on essaie les autres jetons du fichier ; le premier qui marche est retenu pour la suite.
+const tokenCandidates = () => (existsSync(ENV_FILE) ? [...readFileSync(ENV_FILE, 'utf8').matchAll(/^\s*SUPABASE_ACCESS_TOKEN\s*=\s*(.*?)\s*$/gm)].map((m) => m[1].replace(/^["']|["']$/g, '')) : []);
+async function rawMgmt(token, method, p, body) {
   const r = await fetch(`https://api.supabase.com${p}`, {
-    method, headers: { Authorization: `Bearer ${env.SUPABASE_ACCESS_TOKEN}`, 'Content-Type': 'application/json' },
+    method, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await r.text();
   let j; try { j = text ? JSON.parse(text) : null; } catch { j = text; }
+  return { r, j };
+}
+export async function mgmt(env, method, p, body) {
+  let { r, j } = await rawMgmt(env.SUPABASE_ACCESS_TOKEN, method, p, body);
+  if (r.status === 403 && !process.env.SUPABASE_ACCESS_TOKEN) {
+    for (const t of tokenCandidates()) {
+      if (t === env.SUPABASE_ACCESS_TOKEN) continue;
+      const x = await rawMgmt(t, method, p, body);
+      if (x.r.status !== 403 && x.r.status !== 401) { env.SUPABASE_ACCESS_TOKEN = t; r = x.r; j = x.j; break; }
+    }
+  }
   if (!r.ok) throw new Error(`${method} ${p} -> ${r.status} ${typeof j === 'string' ? j : JSON.stringify(j)}`);
   return j;
 }
