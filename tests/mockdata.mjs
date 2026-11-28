@@ -95,9 +95,9 @@ export function buildMockDb({ withBackup = true } = {}) {
   db.recurring = []; db.categories = []; db.params = [];
   for (const [a, s, g, n, items] of CATS) for (const it of items) { const [icone, categorie] = it.split('|'); db.categories.push(row({ activite: a, sens: s, groupe: g, nature: n, icone, categorie })); }
   for (const [cle, valeur] of Object.entries(PARAMS)) db.params.push(row({ cle, valeur, libelle: '' }));
-  db.accounts = [row({ nom: 'Compte courant', devise: 'EUR', dispo: 'Oui', ordre: 1 }), row({ nom: 'Livret A', devise: 'EUR', dispo: 'Oui', ordre: 2 }), row({ nom: 'Compte Maroc', devise: 'MAD', dispo: 'Non', ordre: 3 })];
+  db.accounts = [row({ nom: 'Compte principal', devise: 'EUR', dispo: 'Oui', ordre: 1 }), row({ nom: 'Livret A', devise: 'EUR', dispo: 'Oui', ordre: 2 }), row({ nom: 'Compte Maroc', devise: 'MAD', dispo: 'Non', ordre: 3 })];
   db.snapshots = [];
-  for (let k = 5; k >= 0; k--) { const m = addM(ym(today), -k); db.snapshots.push(row({ date: `${m}-28`, compte: 'Compte courant', solde: 2800 + k * 150, devise: 'EUR', solde_eur: 2800 + k * 150 }), row({ date: `${m}-28`, compte: 'Livret A', solde: 9000 - k * 400, devise: 'EUR', solde_eur: 9000 - k * 400 }), row({ date: `${m}-28`, compte: 'Compte Maroc', solde: 52000 + k * 900, devise: 'MAD', solde_eur: Math.round((52000 + k * 900) * 0.0913) })); }
+  for (let k = 5; k >= 0; k--) { const m = addM(ym(today), -k); db.snapshots.push(row({ date: `${m}-28`, compte: 'Compte principal', solde: 2800 + k * 150, devise: 'EUR', solde_eur: 2800 + k * 150 }), row({ date: `${m}-28`, compte: 'Livret A', solde: 9000 - k * 400, devise: 'EUR', solde_eur: 9000 - k * 400 }), row({ date: `${m}-28`, compte: 'Compte Maroc', solde: 52000 + k * 900, devise: 'MAD', solde_eur: Math.round((52000 + k * 900) * 0.0913) })); }
   db.rappels = [row({ titre: 'Déclaration de revenus', categorie: 'Fiscal', frequence: 'Annuel', date: '2027-05-20', avance: 7, actif: 'Oui', note: '' })];
   db.ordres = [
     row({ date: '2025-02-10', symbole: 'CW8.PA', nom: 'Amundi MSCI World', type: 'ETF', compte: 'PEA', sens: 'Achat', quantite: 10, prix: 480, frais: 2, devise: 'EUR', note: '', secteur: '' }),
