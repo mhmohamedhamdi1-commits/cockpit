@@ -18,6 +18,7 @@ import * as settings from './views/settings.js';
 import * as bourse from './views/bourse.js';
 import * as imports from './views/imports.js';
 import * as impot from './views/impot.js';
+import * as goals from './views/goals.js';
 
 const ROUTES = {
   dashboard: { label: 'Tableau de bord', ic: 'dash', v: dashboard },
@@ -28,12 +29,14 @@ const ROUTES = {
   wealth: { label: 'Patrimoine', ic: 'bank', v: wealth },
   bourse: { label: 'Bourse', ic: 'trend', v: bourse },
   impot: { label: 'Impôt', ic: 'percent', v: impot },
+  goals: { label: 'Objectifs', ic: 'target', v: goals },
   recurring: { label: 'Automatismes', ic: 'repeat', v: recurring },
   settings: { label: 'Paramètres', ic: 'sliders', v: settings },
 };
 
 // ---------- thème ----------
 const mq = window.matchMedia('(prefers-color-scheme: dark)');
+export function applyPrivacy() { document.body.classList.toggle('privacy', !!S.privacy); }
 export function applyTheme() {
   const t = S.theme === 'auto' ? (mq.matches ? 'dark' : 'light') : S.theme;
   document.documentElement.dataset.theme = t;
@@ -163,6 +166,7 @@ function renderNav() {
     h('div', { class: 'row' },
       h('button', { class: 'btn sm', title: 'Synchroniser maintenant', onClick: () => flush().then(() => toast('Synchronisé')) }, icon('repeat', 15)),
       h('button', { class: 'btn sm', title: 'Exporter toutes les données dans un fichier Excel', onClick: () => exportExcel() }, icon('sheet', 15), 'Excel'),
+      h('button', { class: 'btn sm', title: S.privacy ? 'Afficher les montants' : 'Masquer les montants (mode confidentialité)', onClick: () => { S.privacy = !S.privacy; savePrefs(); applyPrivacy(); renderNav(); } }, icon(S.privacy ? 'eyeoff' : 'eye', 15)),
       h('button', { class: 'btn sm', title: S.theme === 'dark' ? 'Mode clair' : 'Mode sombre', onClick: () => { S.theme = (document.documentElement.dataset.theme === 'dark') ? 'light' : 'dark'; savePrefs(); applyTheme(); renderNav(); } }, icon(document.documentElement.dataset.theme === 'dark' ? 'sun' : 'moon', 15))),
     h('div', { class: 'prefrow' }, prefSelect(LANGS, S.lang || 'fr', (v) => { S.lang = v; savePrefs(); setLang(v); emit(); }, 'Langue'), prefSelect(CURRENCIES.map((c) => ({ value: c.code, label: c.sym === c.code ? c.code : `${c.sym} ${c.code}` })), S.displayCur || 'EUR', (v) => { S.displayCur = v; savePrefs(); reload(); }, 'Devise d’affichage')),
     h('div', { class: 'userbox' }, icon('user', 16), h('span', { title: S.user ? S.user.email : '' }, S.user ? S.user.email : ''), h('button', { class: 'btn sm', onClick: logout, title: 'Se déconnecter' }, 'Déconnexion')));
@@ -250,7 +254,7 @@ function registerSW() {
 }
 
 (async function init() {
-  loadPrefs(); applyTheme(); setLang(S.lang || 'fr');
+  loadPrefs(); applyTheme(); applyPrivacy(); setLang(S.lang || 'fr');
   registerSW();
   watchRecovery();
   app.append(h('div', { class: 'loading' }, 'Chargement…'));

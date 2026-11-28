@@ -27,7 +27,8 @@ async function scenario(name, opts, fn) {
   const p = await ctx.newPage();
   const errs = [];
   p.on('pageerror', (e) => errs.push(e.message));
-  p.on('console', (m) => { if (m.type() === 'error' && !/WebSocket|realtime|Failed to fetch|favicon/i.test(m.text())) errs.push('console : ' + m.text().slice(0, 200)); });
+  p.on('response', (r) => { if (r.status() === 404 && !/favicon/.test(r.url())) errs.push('404 : ' + r.url()); });
+  p.on('console', (m) => { if (m.type() === 'error' && !/WebSocket|realtime|Failed to fetch|favicon|status of 404/i.test(m.text())) errs.push('console : ' + m.text().slice(0, 200)); });
   await p.goto(srv.url + '/#/entreprise');
   await p.waitForSelector('.page .card', { timeout: 20000 });
   await p.waitForTimeout(400);
@@ -73,7 +74,7 @@ await scenario('Bureau — entreprise en activité', { viewport: { width: 1440, 
   await p.screenshot({ path: '/tmp/ent-print.png' });
   await p.keyboard.press('Escape');
   // --- planning : cocher une échéance
-  await p.click('.ent-decl-row >> nth=0 >> button:has-text("Payé"), .ent-decl-row >> nth=0 >> button:has-text("Fait")');
+  await p.click('.ent-decl-row:not(.done) >> nth=0 >> button:has-text("Fait")');
   await p.waitForTimeout(400);
   ok(db.declarations.length === 1 && db.declarations[0].code === 'urssaf', 'échéance cochée enregistrée dans « declarations »');
   await p.screenshot({ path: '/tmp/ent-desktop2.png', fullPage: true });
@@ -86,10 +87,10 @@ await scenario('Bureau — entreprise en activité', { viewport: { width: 1440, 
   await p.screenshot({ path: '/tmp/ent-wizard1.png' });
   await p.click('.modal button:has-text("Suivant")');
   await p.waitForTimeout(150);
-  ok(await p.isVisible('.modal text=Régime de TVA'), 'étape 2 : TVA et fiscalité');
+  ok(await p.isVisible('.modal :text("Régime de TVA")'), 'étape 2 : TVA et fiscalité');
   await p.screenshot({ path: '/tmp/ent-wizard2.png' });
   await p.click('.modal button:has-text("Suivant")');
-  await p.waitForSelector('.modal text=Associés et parts');
+  await p.waitForSelector('.modal :text("Associés et parts")');
   await p.fill('.modal input[type=number] >> nth=0', '60');
   await p.click('.modal button:has-text("Ajouter un associé")');
   await p.fill('.modal tbody tr:nth-child(2) input[type=text]', 'Fatima');
@@ -110,7 +111,7 @@ await scenario('Bureau — entreprise en activité', { viewport: { width: 1440, 
   await p.waitForSelector('.modal button:has-text("Supprimer")');
   await p.click('.modal button:has-text("Supprimer")');
   await p.click('.modal button:has-text("Continuer")');
-  await p.waitForSelector('.modal text=Dernière confirmation');
+  await p.waitForSelector('.modal :text("Dernière confirmation")');
   const disabled = await p.isDisabled('.modal button:has-text("Supprimer définitivement")');
   ok(disabled, 'suppression bloquée tant que le nom n’est pas saisi');
   await p.fill('.modal input[placeholder="SASU Test"]', 'SASU Test');

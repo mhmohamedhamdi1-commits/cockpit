@@ -16,7 +16,7 @@ const APP = srv.url;
 const session = makeSession();
 const b = await launch();
 let fail = 0;
-const routes = ['dashboard', 'ops', 'imports', 'entreprise', 'immo', 'wealth', 'bourse', 'impot', 'recurring', 'settings'];
+const routes = ['dashboard', 'ops', 'imports', 'entreprise', 'immo', 'wealth', 'bourse', 'impot', 'goals', 'recurring', 'settings'];
 const matrix = quick ? [['bureau', { viewport: { width: 1440, height: 900 } }, 'fr', 'EUR']]
   : [['bureau', { viewport: { width: 1440, height: 900 } }, 'fr', 'EUR'], ['bureau', { viewport: { width: 1440, height: 900 } }, 'en', 'MAD'], ['bureau', { viewport: { width: 1440, height: 900 } }, 'ar', 'USD'], ['iphone', devices['iPhone 14'], 'fr', 'GBP'], ['iphone', devices['iPhone 14'], 'en', 'CHF']];
 for (const [dev, opts, lang, cur] of matrix) {

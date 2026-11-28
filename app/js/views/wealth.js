@@ -3,7 +3,8 @@ import { S, ops, upsert, del, rateToEur } from '../state.js';
 import { lineChart } from '../charts.js';
 import { modal, field, select, confirmBox, empty, toast } from '../ui.js';
 import { kpi, delta } from './common.js';
-import { portfolioNow, ensureQuotes, valueAt } from '../market.js';
+import { portfolioNow, ensureQuotes, valueAt, netWorthParts } from '../market.js';
+import { donut, PALETTE } from '../charts.js';
 
 export function meta() { return { title: 'Patrimoine', sub: 'Soldes de tes comptes à chaque relevé', immoToggle: false }; }
 
@@ -109,5 +110,10 @@ export function render() {
     h('table', { class: 'tbl' }, h('thead', null, h('tr', null, h('th', null, 'Compte'), h('th', null, 'Statut'), h('th', { class: 'r' }, 'Solde'), h('th', { class: 'r' }, 'En euros'), h('th', { class: 'r' }, 'Variation'))),
       h('tbody', null, rows),
       h('tfoot', null, h('tr', null, h('td', { colspan: 3 }, 'Total'), h('td', { class: 'r num' }, eur(total)), h('td')))));
-  return [kpis, chart, tbl];
+  const nwp = netWorthParts();
+  const classes = [['Liquidités (comptes disponibles)', nwp.liquide], ['Épargne bloquée / placée', nwp.bloque], ['Bourse (portefeuille)', nwp.bourse], ['Immobilier (ma part)', nwp.immo]].filter(([, v]) => v > 0);
+  const items = classes.map(([label, value], i) => ({ label, value, color: PALETTE[i % PALETTE.length] }));
+  const allocCard = items.length ? h('div', { class: 'card' }, h('header', null, h('h2', null, 'Répartition du patrimoine'), h('span', { class: 'sub' }, 'par classe d’actifs, immobilier compté à ma part (valeur estimée ou prix de revient)')),
+    h('div', { class: 'alloc' }, donut(items, { center: eur(nwp.global) }), h('div', { class: 'legendv' }, items.map((i) => h('div', null, h('i', { style: { background: i.color } }), h('span', null, i.label), h('b', { class: 'num' }, pct(i.value / (nwp.global || 1)) + ' · ' + eur(i.value))))))) : null;
+  return [kpis, chart, allocCard, tbl];
 }

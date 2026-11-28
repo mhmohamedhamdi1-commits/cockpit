@@ -32,7 +32,7 @@ export function loadPrefs() {
   try { Object.assign(S, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { /* ignore */ }
 }
 export function savePrefs() {
-  localStorage.setItem(KEY, JSON.stringify({ period: S.period, activity: S.activity, immoView: S.immoView, theme: S.theme, lastActivity: S.lastActivity, immoProjet: S.immoProjet || '', chartGran: S.chartGran || 'auto', chartType: S.chartType || 'bar', collapsed: S.collapsed || {}, colOrder: S.colOrder || {}, lang: S.lang || 'fr', displayCur: S.displayCur || 'EUR' }));
+  localStorage.setItem(KEY, JSON.stringify({ period: S.period, activity: S.activity, immoView: S.immoView, theme: S.theme, lastActivity: S.lastActivity, immoProjet: S.immoProjet || '', chartGran: S.chartGran || 'auto', chartType: S.chartType || 'bar', collapsed: S.collapsed || {}, colOrder: S.colOrder || {}, lang: S.lang || 'fr', displayCur: S.displayCur || 'EUR', privacy: !!S.privacy }));
 }
 
 // ---------- stockage local ----------

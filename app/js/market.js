@@ -84,3 +84,23 @@ export function sectorOf(p) {
   if (p.type === 'Obligation') return 'Obligations';
   return 'Non classé';
 }
+
+// ---------- patrimoine net : comptes (dernier relevé) + bourse + immobilier (ma part) ----------
+export function netWorthParts() {
+  const latest = new Map();
+  for (const x of [...S.data.snapshots].sort((a, b) => (a.date < b.date ? -1 : 1))) latest.set(x.compte, x);
+  const dispoAcc = new Set(S.data.accounts.filter((a) => a.dispo === 'Oui').map((a) => a.nom));
+  let liquide = 0, bloque = 0;
+  for (const [c, x] of latest) { if (dispoAcc.has(c)) liquide += x.soldeEur; else bloque += x.soldeEur; }
+  const bourse = portfolioNow().total.value || 0;
+  // immobilier : valeur estimée du projet si elle est saisie, sinon prix de revient net (acquisition + travaux), × ma part, converti en euros
+  let immo = 0;
+  for (const p of (S.data.projets || []).filter((x) => (x.type || 'Immobilier') === 'Immobilier')) {
+    const toMad = (t) => (t.devise === 'MAD' ? t.montant : t.montantEur / S.P.taux);
+    const cout = S.data.tx.filter((t) => t.projetId === p.id && t.nature === 'Investissement').reduce((s0, t) => s0 + (t.sens === 'Dépense' ? 1 : -1) * toMad(t), 0);
+    const valeur = Number(p.meta && p.meta.valeur) || cout;
+    const part = p.uid && S.user && p.uid !== S.user.id ? (S.memberships.find((m) => m.projet_id === p.id) || { part: p.part }).part : p.part;
+    immo += valeur * Number(part) * S.P.taux;
+  }
+  return { liquide, bloque, bourse, immo, comptes: liquide + bloque, net: liquide + bloque + bourse, global: liquide + bloque + bourse + immo };
+}

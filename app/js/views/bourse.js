@@ -107,7 +107,14 @@ export function render() {
         h('td', null, h('span', { class: 'pill ' + (o.sens === 'Achat' ? 'info' : o.sens === 'Vente' ? 'warn' : 'good') }, o.sens)),
         h('td', { class: 'r num' }, o.quantite ? qfmt(o.quantite) : '—'), h('td', { class: 'r num' }, money(o.prix, o.devise, 2)), h('td', { class: 'r num' }, o.frais ? money(o.frais, o.devise, 2) : '—'),
         h('td', { class: 'r num' }, money(o.sens === 'Dividende' && !o.quantite ? o.prix : o.quantite * o.prix, o.devise, 2)))))));
-  return [head, kpis, h('div', { class: 'row2' }, evCard, allocCard), h('div', { class: 'row2e' }, perfCard, h('div', { class: 'card' }, h('header', null, h('h2', null, 'Frais et fiscalité')),
+  // dividendes : 12 derniers mois
+  const dm = []; for (let k = 11; k >= 0; k--) { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - k); dm.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`); }
+  const divBy = new Map(dm.map((k) => [k, 0]));
+  for (const o of ordres()) if (o.sens === 'Dividende' && divBy.has(o.date.slice(0, 7))) divBy.set(o.date.slice(0, 7), divBy.get(o.date.slice(0, 7)) + (o.quantite ? o.quantite * o.prix : o.prix) * (fxOf(o.devise) || 1) - (o.frais || 0) * (fxOf(o.devise) || 1));
+  const divTot = [...divBy.values()].reduce((a, b) => a + b, 0);
+  const divCard = divTot > 0 ? h('div', { class: 'card' }, h('header', null, h('h2', null, 'Dividendes'), h('span', { class: 'sub' }, `${eur(divTot)} sur 12 mois · rendement ${t.value ? pct(divTot / t.value, 1) : '—'} de la valeur`)),
+    seriesChart({ labels: dm.map((k) => ({ key: k, label: monthShort(k), sub: k.endsWith('-01') ? k.slice(0, 4) : '', full: k })), type: 'bar', title: 'Dividendes par mois', series: [{ name: 'Dividendes', color: 'var(--flow-in)', values: dm.map((k) => divBy.get(k)) }] })) : null;
+  return [head, kpis, h('div', { class: 'row2' }, evCard, allocCard), divCard, h('div', { class: 'row2e' }, perfCard, h('div', { class: 'card' }, h('header', null, h('h2', null, 'Frais et fiscalité')),
     h('div', { class: 'cashlist' },
       h('div', { class: 'cashrow' }, h('div', null, h('b', null, 'Frais payés'), h('span', { class: 'sub' }, 'courtage, tous ordres')), h('div', { class: 'num v' }, eur(t.fees, 2))),
       h('div', { class: 'cashrow' }, h('div', null, h('b', null, 'Plus-values réalisées'), h('span', { class: 'sub' }, 'méthode du prix moyen pondéré')), h('div', { class: 'num v ' + cls(t.realized) }, signed(t.realized))),
