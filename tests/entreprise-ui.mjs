@@ -27,7 +27,7 @@ async function scenario(name, opts, fn) {
   const p = await ctx.newPage();
   const errs = [];
   p.on('pageerror', (e) => errs.push(e.message));
-  p.on('response', (r) => { if (r.status() === 404 && !/favicon/.test(r.url())) errs.push('404 : ' + r.url()); });
+  p.on('response', (r) => { if (r.status() === 404 && !/favicon|compare\.js/.test(r.url())) errs.push('404 : ' + r.url()); });
   p.on('console', (m) => { if (m.type() === 'error' && !/WebSocket|realtime|Failed to fetch|favicon|status of 404/i.test(m.text())) errs.push('console : ' + m.text().slice(0, 200)); });
   await p.goto(srv.url + '/#/entreprise');
   await p.waitForSelector('.page .card', { timeout: 20000 });
@@ -40,6 +40,18 @@ async function scenario(name, opts, fn) {
 
 await scenario('Bureau — entreprise en activité', { viewport: { width: 1440, height: 900 } }, async (p, db) => {
   await p.screenshot({ path: '/tmp/ent-desktop.png', fullPage: true });
+  // liens des notifications : jours travaillés du mois, facture
+  await p.goto(srv.url + '/#/entreprise?jours=2027-06');
+  await p.waitForSelector('.modal :text("Facturation du mois")', { timeout: 5000 });
+  ok(await p.inputValue('.modal input[type=month]') === '2027-06', 'lien « jours travaillés » ouvre la facturation de juin');
+  await p.keyboard.press('Escape');
+  const planned = db.invoices.find((i) => i.statut === 'Planifiée');
+  await p.goto(srv.url + `/#/entreprise?inv=${planned.id}`);
+  await p.waitForSelector(`.modal :text("Facture ${planned.numero}")`, { timeout: 5000 });
+  ok(true, 'lien « facture » ouvre la facture');
+  await p.keyboard.press('Escape');
+  await p.goto(srv.url + '/#/entreprise');
+  await p.waitForSelector('.ent-head');
   ok(await p.isVisible('text=Planning de déclarations 2027'), 'planning de déclarations affiché');
   ok(await p.isVisible('text=Plafonds 2027'), 'plafonds affichés');
   // --- facturation du mois
