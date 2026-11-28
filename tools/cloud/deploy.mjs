@@ -105,7 +105,7 @@ async function build() {
   fs.writeFileSync(path.join(DIST, 'config.js'), `// Généré le ${new Date().toISOString()} — configuration publique (aucun secret)
 export const CONFIG = ${JSON.stringify({ url: SB_URL, key, vapid: env.VAPID_PUBLIC_KEY, backupUrl: env[k('COCKPIT_BACKUP_URL')] || '__BACKUP_URL__', allowSignup: !locked, build: buildId }, null, 2)};
 `);
-  const assets = ['/', ...walk(DIST).filter((f) => !['sw.js', '_headers'].includes(f) && !f.endsWith('.map')).map((f) => '/' + f)];
+  const assets = ['/', ...walk(DIST).filter((f) => !['sw.js', '_headers'].includes(f) && !f.endsWith('.map') && !f.startsWith('vendor/pdf')).map((f) => '/' + f)];
   const sw = fs.readFileSync(path.join(DIST, 'sw.js'), 'utf8').replace('__BUILD__', buildId).replace('__ASSETS__', JSON.stringify(assets));
   fs.writeFileSync(path.join(DIST, 'sw.js'), sw);
   const connect = ["'self'", SB_URL, SB_URL.replace('https', 'wss'), env[k('COCKPIT_BACKUP_URL')]].filter(Boolean).join(' ');

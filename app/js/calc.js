@@ -88,9 +88,6 @@ export function topCategories(list, { by = 'groupe', n = 8 } = {}) {
 export const tenancyFor = (lot, month) => core.tenancyFor(S, lot, month);
 export const activeTenants = (date = S.today) => core.activeTenants(S, date);
 export const rentCell = (lot, month) => core.rentCell(S, lot, month);
-export const microFactor = (year) => core.microFactor(S, year);
-export const freelanceYear = (year) => core.freelanceYear(S, year);
-export const microYear = () => core.microYear(S);
 
 // Tri stable « plus récent d'abord » (date puis ordre de saisie)
 export const byDateDesc = (a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : (b.seq || 1e15) - (a.seq || 1e15));

@@ -11,10 +11,6 @@ import { partnerBalances, capitalRecovery, occupancy } from '../immo-calc.js';
 import { openTxForm } from '../txform.js';
 import { actDot, catChip, amountEl, kpi, delta, natureBadge } from './common.js';
 
-// Module Entreprise (chargé à la demande : indicateurs de santé de l'entreprise)
-let ENT = null;
-import('../entreprise.js').then((m) => { ENT = m; if (S.route === 'dashboard') emit(); }).catch(() => { /* module absent : pas d'indicateurs d'entreprise */ });
-
 export function meta() {
   const sub = { Tout: 'Perso + Immobilier (tes parts) — l’entreprise est suivie à part, jamais additionnée', Perso: 'Ta vie courante', Entreprise: 'Activité de l’entreprise (100 % de l’entreprise)', Immobilier: 'Immobilier — tes parts des projets', Bourse: 'Ton portefeuille valorisé aux cours du marché' };
   return { title: 'Tableau de bord', sub: sub[S.activity] || sub.Tout, activity: true, immoToggle: false };
@@ -191,7 +187,7 @@ function healthOpts() {
   const main = [...projets].sort((a, b) => S.data.tx.filter((t) => t.projetId === b.id).length - S.data.tx.filter((t) => t.projetId === a.id).length)[0];
   let balances = null, capital = null;
   if (main) { try { balances = partnerBalances(S, main, assocOpts(main)); capital = capitalRecovery(S, main); } catch (e) { console.error(e); } }
-  return { projets, partOf, occupancy, balances, capital, pf: portfolioNow(), sectorOf, entreprise: ENT && ENT.entrepriseHealth ? (ctx) => ENT.entrepriseHealth(ctx, entreprises()) : null };
+  return { projets, partOf, occupancy, balances, capital, pf: portfolioNow(), sectorOf};
 }
 const fmtVal = (i) => (i.fmt === 'pct' ? pct(i.value) : i.fmt === 'mois' ? `${i.value.toFixed(1).replace('.', ',')} mois` : i.fmt === 'delta' ? `${i.value >= 0 ? '+' : ''}${pct(i.value)}` : i.fmt === 'mad' ? mad(i.value) : i.fmt === 'money' ? eur(i.value) : String(i.value));
 const fg = (g) => String(g).replace('.', ',');
@@ -264,16 +260,16 @@ function compareCard() {
   const rate = rev > 0 ? Math.max(-1, (rev - dep) / rev) : null;
   const sav = rate != null && CMP.compareSavings ? CMP.compareSavings(rate) : null;
   const cell = (r) => h('div', { class: 'cmpcell' }, h('div', { class: 'cmpfl' }, r.flag, ' ', r.label),
-    h('div', { class: 'cmptop' }, r.topPct < 1 ? '< 1 %' : r.topPct >= 99 ? '> 99 %' : `${r.topPct < 10 ? r.topPct.toFixed(1).replace('.', ',') : Math.round(r.topPct)} %`),
-    h('div', { class: 'cmpsub' }, 'les plus aisés'),
+    h('div', { class: 'cmptop' }, r.topPct <= 50 ? `Top ${r.topPct < 1 ? '< 1' : r.topPct < 10 ? r.topPct.toFixed(1).replace('.', ',') : Math.round(r.topPct)} %` : `${Math.round(r.percentile * 100)} %`),
+    h('div', { class: 'cmpsub' }, r.topPct <= 50 ? 'de la population (les plus aisés)' : 'de la population est en dessous de toi'),
     h('div', { class: 'cmpbar', title: `Tu dépasses ${Math.round(r.percentile * 100)} % de la population` }, h('i', { style: { width: Math.max(2, Math.min(100, r.percentile * 100)) + '%' } })),
     h('div', { class: 'cmpmed' }, r.ratioToMedian >= 10 ? `${Math.round(r.ratioToMedian)} × la médiane` : `${r.ratioToMedian.toFixed(1).replace('.', ',')} × la médiane`));
-  const block = (title, sub, res) => res ? h('div', { class: 'cmpblock' }, h('div', { class: 'cmphead' }, h('b', null, title), h('span', { class: 'sub' }, sub)), h('div', { class: 'cmprow' }, res.map(cell))) : null;
+  const block = (title, sub, res) => res ? h('div', { class: 'cmpblock' }, h('div', { class: 'cmphead' }, h('b', null, title), h('span', { class: 'sub' }, sub)), h('div', { class: 'cmprow' }, res.zones.map(cell))) : null;
   return h('div', { class: 'card' }, h('header', null, h('h2', null, 'Où je me situe'), h('span', { class: 'sub' }, 'toi face à la population de la France, du Maroc et du monde'),
     h('div', { class: 'right' }, segmented([{ value: 'nom', label: 'Nominal' }, { value: 'ppp', label: 'Pouvoir d’achat' }], S.cmpPpp ? 'ppp' : 'nom', (v) => { S.cmpPpp = v === 'ppp'; emit(); }, 'sm'))),
     block('Revenus', `${eur(rev)} nets sur 12 mois`, inc), block('Patrimoine', `${eur(wealth)} (comptes + bourse)`, wea),
-    sav ? h('div', { class: 'cmpsave' }, h('b', null, 'Taux d’épargne'), ' ', pct(rate), ' ', h('span', { class: 'sub' }, sav.text || '')) : null,
-    inc ? h('div', { class: 'note' }, CMP.explain ? CMP.explain(inc) : '', ' ', 'Estimations à partir de statistiques publiques (voir docs/11_Comparaison_pays.md) ; un revenu individuel est comparé à un revenu par personne.') : null);
+    sav ? h('div', { class: 'cmpsave' }, h('b', null, 'Taux d’épargne'), ' ', pct(rate), ' ', h('span', { class: 'sub' }, sav.zones.filter((z) => z.rate != null).map((z) => `${z.flag} ${z.in} : ${pct(z.rate, 1)} (${z.diffPts >= 0 ? '+' : ''}${String(z.diffPts).replace('.', ',')} pts)`).join(' · '))) : null,
+    inc ? h('div', { class: 'note' }, CMP.explain(inc), ' ', 'Sources : INSEE (2024), HCP (2019, médiane estimée), Banque mondiale (2024), UBS Global Wealth (2022). Ton revenu net individuel est comparé à un revenu par personne : repère indicatif, pas une mesure exacte.') : null);
 }
 
 // ---------- Tableau de bord « Bourse » ----------

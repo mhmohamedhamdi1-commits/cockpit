@@ -1,6 +1,7 @@
 // Calculs purs (sans DOM, sans état global) : partagés par l'application et par la fonction
 // serveur de notifications. ctx = { data, today, P, catMap, lots, immoView }.
 import { addMonths, monthEnd, monthStart, monthLong, monthLabel, daysBetween, fmtDate, mad, eur } from './util.js';
+import { entrepriseAlerts, entrepriseHealth } from './entreprise.js';   // module Entreprise (pur) : alertes de plafonds / échéances, santé
 
 export function buildIndex(data) {
   const P = {}; for (const p of data.params) P[p.cle] = p.valeur;
@@ -64,31 +65,6 @@ export function rentCell(ctx, lot, month) {
   else status = 'late';
   return { status, paid: e.paid, expected, tenant: ten, txs: e.txs };
 }
-
-// ---------- Freelance ----------
-export function microFactor(ctx, year) {
-  const start = ctx.P.microDebut || '2027-01-01';
-  if (String(year) !== start.slice(0, 4)) return 1;
-  const d0 = new Date(start + 'T00:00:00'), d1 = new Date(`${year}-12-31T00:00:00`);
-  const days = Math.round((d1 - d0) / 864e5) + 1;
-  return Math.min(1, days / 365);
-}
-export function freelanceYear(ctx, year) {
-  const micro = new Set(ctx.data.clients.filter((c) => c.micro === 'Oui').map((c) => c.nom));
-  const from = (ctx.P.microDebut || '2027-01-01').slice(0, 7);
-  const ht = (i) => (i.devise === 'MAD' ? i.ht * ctx.P.taux : i.ht);
-  const yr = (d, fb) => (d || fb || '').slice(0, 4);
-  let paid = 0, billed = 0, planned = 0;
-  for (const i of ctx.data.invoices) {
-    if (!micro.has(i.client) || i.periode < from) continue;
-    if (i.statut === 'Payée' && yr(i.paiement, i.emission || i.periode + '-01') === year) paid += ht(i);
-    else if (i.statut === 'Envoyée' && yr(i.emission, i.periode + '-01') === year) billed += ht(i);
-    else if (i.statut === 'Planifiée' && i.periode.slice(0, 4) === year) planned += ht(i);
-  }
-  const f = microFactor(ctx, year);
-  return { paid, billed, planned, total: paid + billed + planned, factor: f, micro: ctx.P.seuilMicro * f, tva: ctx.P.seuilTva * f, tvaMaj: ctx.P.seuilTvaMaj * f };
-}
-export function microYear(ctx) { return Math.max(+ctx.today.slice(0, 4), +(ctx.P.microDebut || '2027').slice(0, 4)); }
 
 // ---------- Récurrents ----------
 export const recurringApplies = (r, m) => r.actif !== 'Non' && (!r.debut || r.debut <= m + '-31') && (!r.fin || r.fin >= m + '-01');
@@ -155,10 +131,7 @@ export function computeAlerts(ctx) {
   if (toSend.length) out.push({ id: 'factures_envoyer', kind: 'warn', ic: 'send', title: `${toSend.length} facture${toSend.length > 1 ? 's' : ''} à envoyer`, sub: toSend.slice(0, 3).map((i) => `${i.client.split(' ')[0]} ${monthLabel(i.periode)}`).join(' · '), go: '#/entreprise', label: 'Voir' });
   const unpaid = d.invoices.filter((i) => i.statut === 'Envoyée' && i.emission && daysBetween(i.emission, ctx.today) > 30);
   if (unpaid.length) out.push({ id: 'factures_retard', kind: 'bad', ic: 'alert', title: `${unpaid.length} facture${unpaid.length > 1 ? 's' : ''} impayée${unpaid.length > 1 ? 's' : ''} depuis +30 j`, sub: unpaid.slice(0, 3).map((i) => `${i.numero} · ${i.client.split(' ')[0]}`).join(' · '), go: '#/entreprise', label: 'Relancer' });
-  const y = String(microYear(ctx)), fy = freelanceYear(ctx, y), done = fy.paid + fy.billed;
-  if (done >= fy.tvaMaj) out.push({ id: 'seuil_tva_maj', kind: 'bad', ic: 'alert', title: 'Seuil majoré de TVA dépassé', sub: `${eur(done)} de CA ${y} : la TVA est due dès maintenant (seuil ${eur(fy.tvaMaj)})`, go: '#/entreprise', label: 'Voir' });
-  else if (done >= fy.tva) out.push({ id: 'seuil_tva', kind: 'warn', ic: 'alert', title: 'Franchise de TVA dépassée', sub: `${eur(done)} de CA ${y} (seuil ${eur(fy.tva)}) : TVA due au 1er janvier`, go: '#/entreprise', label: 'Voir' });
-  else if (fy.total > fy.micro) out.push({ id: 'seuil_micro', kind: 'info', ic: 'info', title: `Plafond micro ${y} dépassé en projection`, sub: `${eur(fy.total)} planifiés vs ${eur(fy.micro)} de plafond`, go: '#/entreprise', label: 'Détails' });
+  out.push(...entrepriseAlerts(ctx));   // plafonds, TVA, démarrage, jours travaillés, échéances de déclaration (par entreprise)
   for (const m of [cur, ...(+ctx.today.slice(8, 10) >= 25 ? [addMonths(cur, 1)] : [])]) {
     const miss = missingRecurring(ctx, m);
     if (miss.length) out.push({ id: 'recurrents:' + m, kind: 'info', ic: 'repeat', title: `${miss.length} opération${miss.length > 1 ? 's' : ''} récurrente${miss.length > 1 ? 's' : ''} à générer`, sub: `pour ${monthLong(m)}`, action: { key: 'generate_recurring', month: m }, label: 'Générer' });
@@ -391,7 +364,7 @@ export function financialHealth(ctx, o = {}) {
   let monthlyRev = 0, monthlyDep = 0;
   if (want('Perso')) { const r = persoIndicators(ctx); built.push(['Perso', r.ind]); monthlyRev = r.monthlyRev; monthlyDep = r.monthlyDep; }
   if (want('Immobilier')) built.push(['Immobilier', immoIndicators(ctx, o)]);
-  if (want('Entreprise')) built.push(['Entreprise', (o.entreprise ? o.entreprise(ctx) : []).map((i) => ({ domain: 'Entreprise', ...i }))]);
+  if (want('Entreprise')) built.push(['Entreprise', (o.entreprise ? o.entreprise(ctx) : entrepriseHealth(ctx)).map((i) => ({ domain: 'Entreprise', ...i }))]);
   if (want('Bourse')) built.push(['Bourse', bourseIndicators(ctx, o)]);
   const domains = built.filter(([, l]) => l.length).map(([name, list]) => ({ name, indicators: list, score: avgGrade(list), level: healthLevel(avgGrade(list)), label: healthLabel(avgGrade(list)) }));
   const indicators = domains.flatMap((d) => d.indicators);

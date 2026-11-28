@@ -6,6 +6,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import webpush from 'npm:web-push@3.6.7';
 import { TABLES, fromDb } from '../_shared/schema.js';
 import * as core from '../_shared/core.js';
+import * as ent from '../_shared/entreprise.js';
 import { monthLong, monthLabel, daysBetween, eur, mad, addMonths } from '../_shared/util.js';
 
 const SB_URL = Deno.env.get('SUPABASE_URL')!;
@@ -87,6 +88,8 @@ type Note = { key: string; title: string; body: string; url: string; tag?: strin
 async function compute(uid: string, now: ReturnType<typeof paris>, forceHour?: number) {
   const data = await loadData(uid);
   const ctx: any = { data, today: now.date, immoView: 'mine', ...core.buildIndex(data) };
+  const { data: fxRows } = await admin.from('fx_rates').select('pair,rate').in('pair', ['USD/EUR', 'GBP/EUR', 'CHF/EUR']).order('date', { ascending: false }).limit(30);
+  ctx.fx = {}; for (const r of fxRows || []) { const c = String(r.pair).split('/')[0]; if (!ctx.fx[c]) ctx.fx[c] = Number(r.rate); }
   const P = ctx.P, hour = forceHour ?? now.hour, today = now.date, month = today.slice(0, 7), day = +today.slice(8, 10);
   const week = isoWeek(today);
   const alerts = core.computeAlerts(ctx);
@@ -139,9 +142,14 @@ async function compute(uid: string, now: ReturnType<typeof paris>, forceHour?: n
       const n = (data.import_lignes as any[] || []).filter((l: any) => l.statut === 'attente').length;
       if (n) notes.push({ key: `imports:${week}`, title: `${n} opération${n > 1 ? 's' : ''} à valider`, body: 'Importées depuis ton relevé bancaire : valide-les pour les intégrer à tes calculs.', url: '/#/imports', tag: 'imports' });
     }
-    for (const id of ['seuil_tva_maj', 'seuil_tva', 'seuil_micro']) {
-      const a = byId(id);
-      if (a) notes.push({ key: `${id}:${month}`, title: a.title, body: a.sub, url: '/#/entreprise', tag: 'seuils' });
+    // plafonds / TVA des entreprises (une alerte par entreprise) : une notification par mois
+    for (const a of alerts.filter((x: any) => /^seuil_/.test(x.id))) notes.push({ key: `${a.id}:${month}`, title: a.title, body: a.sub, url: '/#/entreprise', tag: 'seuils' });
+    // déclarations et paiements des entreprises : à J-7, J-1 et le jour J (une seule fois chacun)
+    if (P.notif('declarations')) {
+      for (const d of ent.upcomingDeadlines(ctx, today, 7)) {
+        if (![7, 1, 0].includes(d.inDays) && !(d.late && d.inDays === -1)) continue;
+        notes.push({ key: `decl:${d.projetId}:${d.code}:${d.periode}:${d.late ? 'retard' : 'J' + d.inDays}`, title: `${d.late ? 'En retard : ' : d.inDays === 0 ? 'Aujourd’hui : ' : `Dans ${d.inDays} j : `}${d.label}`, body: `${d.nom} — échéance le ${d.date.split('-').reverse().join('/')}. Marque-la « fait » ou « payé » dans Entreprise pour arrêter les rappels.`, url: '/#/entreprise', tag: 'decl-' + d.code });
+      }
     }
     if (P.notif('provision')) {
       const since = new Date(Date.now() - 3 * 864e5).toISOString().slice(0, 10);
