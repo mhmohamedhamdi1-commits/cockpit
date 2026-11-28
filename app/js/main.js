@@ -1,5 +1,5 @@
-import { h, icon, clear, monthLabel, monthLong, addMonths, monthNames, monthShort } from './util.js';
-import { S, load, loadPrefs, savePrefs, subscribe, emit, reload, setPeriod, setActivity, startSync, flush, wipeLocal, stopSync, partLabel } from './state.js';
+import { h, icon, clear, monthLabel, monthLong, addMonths, monthNames, monthShort, CURRENCIES } from './util.js';
+import { S, load, loadPrefs, savePrefs, subscribe, emit, reload, setPeriod, setActivity, startSync, flush, wipeLocal, stopSync, partLabel, immoProjets } from './state.js';
 import { segmented, popover, toast, modal } from './ui.js';
 import { ensureAuth, watchRecovery, logout } from './auth.js';
 import { sb } from './supa.js';
@@ -10,26 +10,33 @@ import { setLang, LANGS } from './i18n.js';
 import { openTxForm } from './txform.js';
 import * as dashboard from './views/dashboard.js';
 import * as opsView from './views/ops.js';
-import * as freelance from './views/freelance.js';
+import * as entreprise from './views/entreprise.js';
 import * as immo from './views/immo.js';
 import * as wealth from './views/wealth.js';
 import * as recurring from './views/recurring.js';
 import * as settings from './views/settings.js';
 import * as bourse from './views/bourse.js';
+import * as imports from './views/imports.js';
+import * as impot from './views/impot.js';
+import * as goals from './views/goals.js';
 
 const ROUTES = {
   dashboard: { label: 'Tableau de bord', ic: 'dash', v: dashboard },
   ops: { label: 'Opérations', ic: 'list', v: opsView },
-  freelance: { label: 'Freelance', ic: 'brief', v: freelance },
+  imports: { label: 'À valider', ic: 'inbox', v: imports },
+  entreprise: { label: 'Entreprise', ic: 'brief', v: entreprise },
   immo: { label: 'Immobilier', ic: 'building', v: immo },
   wealth: { label: 'Patrimoine', ic: 'bank', v: wealth },
   bourse: { label: 'Bourse', ic: 'trend', v: bourse },
+  impot: { label: 'Impôt', ic: 'percent', v: impot },
+  goals: { label: 'Objectifs', ic: 'target', v: goals },
   recurring: { label: 'Automatismes', ic: 'repeat', v: recurring },
   settings: { label: 'Paramètres', ic: 'sliders', v: settings },
 };
 
 // ---------- thème ----------
 const mq = window.matchMedia('(prefers-color-scheme: dark)');
+export function applyPrivacy() { document.body.classList.toggle('privacy', !!S.privacy); }
 export function applyTheme() {
   const t = S.theme === 'auto' ? (mq.matches ? 'dark' : 'light') : S.theme;
   document.documentElement.dataset.theme = t;
@@ -159,8 +166,9 @@ function renderNav() {
     h('div', { class: 'row' },
       h('button', { class: 'btn sm', title: 'Synchroniser maintenant', onClick: () => flush().then(() => toast('Synchronisé')) }, icon('repeat', 15)),
       h('button', { class: 'btn sm', title: 'Exporter toutes les données dans un fichier Excel', onClick: () => exportExcel() }, icon('sheet', 15), 'Excel'),
+      h('button', { class: 'btn sm', title: S.privacy ? 'Afficher les montants' : 'Masquer les montants (mode confidentialité)', onClick: () => { S.privacy = !S.privacy; savePrefs(); applyPrivacy(); renderNav(); } }, icon(S.privacy ? 'eyeoff' : 'eye', 15)),
       h('button', { class: 'btn sm', title: S.theme === 'dark' ? 'Mode clair' : 'Mode sombre', onClick: () => { S.theme = (document.documentElement.dataset.theme === 'dark') ? 'light' : 'dark'; savePrefs(); applyTheme(); renderNav(); } }, icon(document.documentElement.dataset.theme === 'dark' ? 'sun' : 'moon', 15))),
-    h('div', { class: 'prefrow' }, prefSelect(LANGS, S.lang || 'fr', (v) => { S.lang = v; savePrefs(); setLang(v); emit(); }, 'Langue'), prefSelect([{ value: 'EUR', label: '€ EUR' }, { value: 'MAD', label: 'MAD' }], S.displayCur || 'EUR', (v) => { S.displayCur = v; savePrefs(); reload(); }, 'Devise d’affichage')),
+    h('div', { class: 'prefrow' }, prefSelect(LANGS, S.lang || 'fr', (v) => { S.lang = v; savePrefs(); setLang(v); emit(); }, 'Langue'), prefSelect(CURRENCIES.map((c) => ({ value: c.code, label: c.sym === c.code ? c.code : `${c.sym} ${c.code}` })), S.displayCur || 'EUR', (v) => { S.displayCur = v; savePrefs(); reload(); }, 'Devise d’affichage')),
     h('div', { class: 'userbox' }, icon('user', 16), h('span', { title: S.user ? S.user.email : '' }, S.user ? S.user.email : ''), h('button', { class: 'btn sm', onClick: logout, title: 'Se déconnecter' }, 'Déconnexion')));
   renderTabbar();
 }
@@ -171,11 +179,13 @@ function renderTop() {
   const title = h('h1', null, meta.title || r.label, meta.sub ? h('span', { class: 'sub' }, meta.sub) : null);
   refs.top.append(title);
   if (meta.immoToggle) {
-    const pid = S.immoProjet && (S.data.projets || []).some((p) => p.id === S.immoProjet) ? S.immoProjet : '';
+    const pid = S.immoProjet && immoProjets().some((p) => p.id === S.immoProjet) ? S.immoProjet : '';
     refs.top.append(segmented([{ value: 'mine', label: partLabel(pid) }, { value: 'full', label: 'Total (100 %)' }], S.immoView, (v) => { S.immoView = v; savePrefs(); emit(); }));
   }
   if (meta.activity) {
-    refs.top.append(segmented([{ value: 'Tout', label: 'Tout' }, { value: 'Perso', label: 'Perso', dot: 'bg-Perso' }, { value: 'Freelance', label: 'Freelance', dot: 'bg-Freelance' }, { value: 'Immobilier', label: 'Immobilier', dot: 'bg-Immobilier' }], S.activity, setActivity));
+    const all = [{ value: 'Tout', label: 'Tout' }, { value: 'Perso', label: 'Perso', dot: 'bg-Perso' }, { value: 'Entreprise', label: 'Entreprise', dot: 'bg-Entreprise' }, { value: 'Immobilier', label: 'Immobilier', dot: 'bg-Immobilier' }, { value: 'Bourse', label: 'Bourse', dot: 'bg-Bourse' }];
+    const items = meta.activity === 'ops' ? all.filter((a) => a.value !== 'Bourse') : all;     // la bourse n'a pas d'opérations : filtre réservé au tableau de bord
+    refs.top.append(segmented(items, items.some((a) => a.value === S.activity) ? S.activity : 'Tout', setActivity));
   }
   if (meta.period !== false) {
     const b = h('button', { class: 'pillbtn', type: 'button', onClick: () => openPeriod(b) }, icon('calendar', 17), periodText(), icon('right', 14));
@@ -186,12 +196,14 @@ function renderTop() {
 let renderToken = 0;
 function renderView() {
   const st = refs.scroll.scrollTop;
+  const mx = document.querySelector('.card.maxed'), mst = mx ? mx.scrollTop : 0;
   clear(refs.scroll);
   const r = ROUTES[S.route];
   try { refs.scroll.append(h('div', { class: 'page' }, r.v.render())); }
   catch (e) { console.error(e); refs.scroll.append(h('div', { class: 'card' }, h('b', null, 'Erreur d’affichage'), h('pre', { style: { whiteSpace: 'pre-wrap' } }, String(e.stack || e)))); }
   refs.scroll.scrollTop = st;
   enhance(refs.scroll);
+  const mx2 = document.querySelector('.card.maxed'); if (mx2) mx2.scrollTop = mst;
 }
 function renderAll() { renderNav(); renderTop(); renderView(); document.title = `${ROUTES[S.route].label} — Cockpit`; updateBadge(); }
 
@@ -211,7 +223,7 @@ function route() {
   const [k0, qs0] = (location.hash || '#/dashboard').replace('#/', '').split('?');
   if (k0 === 'invitation') { const code = new URLSearchParams(qs0 || '').get('i'); if (code) { acceptInvitation(code); return; } }
   const [k, qs] = (location.hash || '#/dashboard').replace('#/', '').split('?');
-  S.route = ROUTES[k] ? k : 'dashboard';
+  S.route = ROUTES[k] ? k : (k === 'freelance' ? 'entreprise' : 'dashboard');   // anciens liens (notifications) : Freelance -> Entreprise
   S.args = Object.fromEntries(new URLSearchParams(qs || ''));
   renderAll();
   refs.scroll.scrollTop = 0;
@@ -242,7 +254,7 @@ function registerSW() {
 }
 
 (async function init() {
-  loadPrefs(); applyTheme(); setLang(S.lang || 'fr');
+  loadPrefs(); applyTheme(); applyPrivacy(); setLang(S.lang || 'fr');
   registerSW();
   watchRecovery();
   app.append(h('div', { class: 'loading' }, 'Chargement…'));

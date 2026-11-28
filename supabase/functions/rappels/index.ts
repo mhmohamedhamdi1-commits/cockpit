@@ -6,6 +6,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import webpush from 'npm:web-push@3.6.7';
 import { TABLES, fromDb } from '../_shared/schema.js';
 import * as core from '../_shared/core.js';
+import * as ent from '../_shared/entreprise.js';
 import { monthLong, monthLabel, daysBetween, eur, mad, addMonths } from '../_shared/util.js';
 
 const SB_URL = Deno.env.get('SUPABASE_URL')!;
@@ -68,11 +69,27 @@ async function ensureFx(today: string) {
   return error ? { error: error.message } : { ...fx, comptes_mis_a_jour: n };
 }
 
+// Taux du jour pour les autres devises (USD, GBP, CHF) : « x/EUR » = valeur d'1 unité en euros
+async function ensureFxOthers(today: string) {
+  const pairs = ['USD', 'GBP', 'CHF'];
+  const { data } = await admin.from('fx_rates').select('pair').eq('date', today).in('pair', pairs.map((c) => `${c}/EUR`));
+  const missing = pairs.filter((c) => !(data || []).some((d: any) => d.pair === `${c}/EUR`));
+  if (!missing.length) return null;
+  try {
+    const j = await (await fetch('https://open.er-api.com/v6/latest/EUR', { signal: AbortSignal.timeout(10000) })).json();
+    const rows = missing.map((c) => (j.rates && j.rates[c] > 0 ? { date: today, pair: `${c}/EUR`, rate: 1 / j.rates[c], source: 'open.er-api.com' } : null)).filter(Boolean);
+    if (rows.length) await admin.from('fx_rates').upsert(rows);
+    return { autres_devises: rows.length };
+  } catch (e) { console.error('fx autres', e); return { error: (e as Error).message }; }
+}
+
 type Note = { key: string; title: string; body: string; url: string; tag?: string };
 
 async function compute(uid: string, now: ReturnType<typeof paris>, forceHour?: number) {
   const data = await loadData(uid);
   const ctx: any = { data, today: now.date, immoView: 'mine', ...core.buildIndex(data) };
+  const { data: fxRows } = await admin.from('fx_rates').select('pair,rate').in('pair', ['USD/EUR', 'GBP/EUR', 'CHF/EUR']).order('date', { ascending: false }).limit(30);
+  ctx.fx = {}; for (const r of fxRows || []) { const c = String(r.pair).split('/')[0]; if (!ctx.fx[c]) ctx.fx[c] = Number(r.rate); }
   const P = ctx.P, hour = forceHour ?? now.hour, today = now.date, month = today.slice(0, 7), day = +today.slice(8, 10);
   const week = isoWeek(today);
   const alerts = core.computeAlerts(ctx);
@@ -83,9 +100,9 @@ async function compute(uid: string, now: ReturnType<typeof paris>, forceHour?: n
   if (morning) {
     if (P.notif('factures')) {
       const late = byId('factures_retard');
-      if (late) notes.push({ key: `factures_retard:${week}`, title: late.title, body: `${late.sub}. Pense à relancer.`, url: '/#/freelance', tag: 'factures' });
+      if (late) notes.push({ key: `factures_retard:${week}`, title: late.title, body: `${late.sub}. Pense à relancer.`, url: '/#/entreprise', tag: 'factures' });
       const toSend = data.invoices.filter((i: any) => i.statut === 'Planifiée' && i.periode < month);
-      if (toSend.length) notes.push({ key: `factures_envoyer:${week}`, title: `${toSend.length} facture${toSend.length > 1 ? 's' : ''} à envoyer`, body: toSend.slice(0, 3).map((i: any) => `${i.client} — ${monthLabel(i.periode)}`).join(' · '), url: '/#/freelance', tag: 'factures-envoi' });
+      if (toSend.length) notes.push({ key: `factures_envoyer:${week}`, title: `${toSend.length} facture${toSend.length > 1 ? 's' : ''} à envoyer`, body: toSend.slice(0, 3).map((i: any) => `${i.client} — ${monthLabel(i.periode)}`).join(' · '), url: '/#/entreprise', tag: 'factures-envoi' });
     }
     if (P.notif('loyers')) {
       const lateDay = Math.round(P.notifNum('loyer_jour', 5));
@@ -116,15 +133,29 @@ async function compute(uid: string, now: ReturnType<typeof paris>, forceHour?: n
         else if (r.avance > 0 && inDays === r.avance) notes.push({ key: `rappel:${r.id}:${next}:avant`, title: `Dans ${inDays} jours : ${r.titre}`, body: `Échéance le ${next.split('-').reverse().join('/')}. ${r.note || ''}`.trim(), url: '/#/recurring', tag: 'rappel-' + r.id });
       }
     }
-    for (const id of ['seuil_tva_maj', 'seuil_tva', 'seuil_micro']) {
-      const a = byId(id);
-      if (a) notes.push({ key: `${id}:${month}`, title: a.title, body: a.sub, url: '/#/freelance', tag: 'seuils' });
+    if (P.notif('elec')) {
+      // facture d'électricité : du 1er au 3 de chaque mois, une notification par jour jusqu'à ce que le paiement soit saisi
+      const el = core.elecDue(ctx);
+      if (el.due) notes.push({ key: `elec:${today}`, title: 'Facture d’électricité à payer', body: `Du ${el.from} au ${el.to} du mois : règle la facture de l’immeuble, puis saisis la dépense (Eau & électricité) pour arrêter le rappel.`, url: '/#/ops?new=1', tag: 'elec' });
+    }
+    if (P.notif('imports') && now.weekday === 'Mon') {
+      const n = (data.import_lignes as any[] || []).filter((l: any) => l.statut === 'attente').length;
+      if (n) notes.push({ key: `imports:${week}`, title: `${n} opération${n > 1 ? 's' : ''} à valider`, body: 'Importées depuis ton relevé bancaire : valide-les pour les intégrer à tes calculs.', url: '/#/imports', tag: 'imports' });
+    }
+    // plafonds / TVA des entreprises (une alerte par entreprise) : une notification par mois
+    for (const a of alerts.filter((x: any) => /^seuil_/.test(x.id))) notes.push({ key: `${a.id}:${month}`, title: a.title, body: a.sub, url: '/#/entreprise', tag: 'seuils' });
+    // déclarations et paiements des entreprises : à J-7, J-1 et le jour J (une seule fois chacun)
+    if (P.notif('declarations')) {
+      for (const d of ent.upcomingDeadlines(ctx, today, 7)) {
+        if (![7, 1, 0].includes(d.inDays) && !(d.late && d.inDays === -1)) continue;
+        notes.push({ key: `decl:${d.projetId}:${d.code}:${d.periode}:${d.late ? 'retard' : 'J' + d.inDays}`, title: `${d.late ? 'En retard : ' : d.inDays === 0 ? 'Aujourd’hui : ' : `Dans ${d.inDays} j : `}${d.label}`, body: `${d.nom} — échéance le ${d.date.split('-').reverse().join('/')}. Marque-la « fait » ou « payé » dans Entreprise pour arrêter les rappels.`, url: '/#/entreprise', tag: 'decl-' + d.code });
+      }
     }
     if (P.notif('provision')) {
       const since = new Date(Date.now() - 3 * 864e5).toISOString().slice(0, 10);
       for (const t of data.tx as any[]) {
         if (!/^FAC[0-9a-f-]+$/.test(t.ref) || t.date < since) continue;
-        notes.push({ key: `provision:${t.ref}`, title: 'Facture payée : mets de côté', body: `${t.libelle} : mets ${eur(t.montantEur * P.provision)} de côté (${Math.round(P.provision * 100)} % pour cotisations et impôt).`, url: '/#/freelance', tag: 'provision' });
+        notes.push({ key: `provision:${t.ref}`, title: 'Facture payée : mets de côté', body: `${t.libelle} : mets ${eur(t.montantEur * P.provision)} de côté (${Math.round(P.provision * 100)} % pour cotisations et impôt).`, url: '/#/entreprise', tag: 'provision' });
       }
     }
   }
@@ -132,7 +163,7 @@ async function compute(uid: string, now: ReturnType<typeof paris>, forceHour?: n
   if (hour === 17 && P.notif('jours') && today === core.lastBusinessDay(month)) {
     const inv = data.invoices.filter((i: any) => i.periode === month && i.statut === 'Planifiée');
     const who = inv.length ? [...new Set(inv.map((i: any) => i.client))].join(', ') : 'tes clients';
-    notes.push({ key: `jours:${month}`, title: `Jours travaillés en ${monthLong(month).split(' ')[0]} ?`, body: `Renseigne le nombre de jours pour ${who} et prépare la facture.`, url: `/#/freelance?jours=${month}`, tag: 'jours' });
+    notes.push({ key: `jours:${month}`, title: `Jours travaillés en ${monthLong(month).split(' ')[0]} ?`, body: `Renseigne le nombre de jours pour ${who} et prépare la facture.`, url: `/#/entreprise?jours=${month}`, tag: 'jours' });
   }
 
   if (hour === 20 && P.notif('saisie')) {
@@ -173,6 +204,7 @@ Deno.serve(async (req) => {
   if (CRON_SECRET && req.headers.get('x-cron-secret') === CRON_SECRET) {
     const now = paris();
     const fx = await ensureFx(now.date).catch((e) => ({ error: e.message }));
+    const fx2 = await ensureFxOthers(now.date).catch((e) => ({ error: e.message }));
     const { data: users } = await admin.from('push_subscriptions').select('user_id');
     const ids = [...new Set((users || []).map((u: any) => u.user_id))];
     const report: unknown[] = [];
@@ -188,7 +220,7 @@ Deno.serve(async (req) => {
         report.push({ notes: notes.length, sent: n });
       } catch (e: any) { console.error(e); report.push({ error: e.message }); }
     }
-    return json({ ok: true, at: now, fx, report });
+    return json({ ok: true, at: now, fx, fx2, report });
   }
 
   // --- test depuis l'application ---

@@ -1,0 +1,69 @@
+/* Écran « Opérations à valider » (import de relevés) */
+.imp-file { display: none; }
+.imp-drop {
+  display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; padding: 26px 18px;
+  border: 2px dashed var(--line); border-radius: 16px; background: var(--surface-2); color: var(--ink-2); cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.imp-drop:hover, .imp-drop:focus-visible { border-color: var(--accent); outline: none; }
+.imp-drop.over { border-color: var(--accent); background: var(--info-bg); }
+.imp-drop.busy { opacity: .7; pointer-events: none; }
+.imp-drop-t { font-size: 16px; font-weight: 700; color: var(--ink); }
+.imp-opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px 14px; margin-top: 16px; }
+.imp-help { margin-top: 12px; }
+.imp-err { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; background: var(--crit-bg); color: var(--crit-ink); }
+.imp-preview { margin-top: 16px; padding: 14px; border-radius: 14px; background: var(--surface-2); display: flex; flex-direction: column; gap: 12px; }
+.imp-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(108px, 1fr)); gap: 10px; }
+.imp-stat { background: var(--surface); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.imp-stat b { font-size: 21px; font-weight: 750; }
+.imp-stat span { font-size: 12px; color: var(--ink-3); font-weight: 600; }
+.imp-stat.good b { color: var(--good-ink); } .imp-stat.warn b { color: var(--warn-ink); }
+.imp-sample td { padding: 6px 8px; font-size: 13px; }
+.imp-more { text-align: center; font-size: 12.5px; }
+.imp-moreBtn { text-align: center; padding: 14px; }
+
+/* Liste des lignes à valider */
+.imp-pending .filters { margin-bottom: 10px; }
+.imp-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 4px 10px; position: sticky; top: 0; z-index: 3; background: var(--surface); border-bottom: 1px solid var(--line-2); }
+.imp-all { display: inline-flex; align-items: center; gap: 8px; font-weight: 650; font-size: 13.5px; cursor: pointer; }
+.imp-sum { font-size: 12.5px; font-weight: 650; }
+.imp-list { display: flex; flex-direction: column; }
+.imp-row {
+  display: grid; align-items: center; gap: 8px 12px; padding: 8px 6px; border-bottom: 1px solid var(--line-2); border-radius: 10px;
+  grid-template-columns: 28px 74px minmax(170px, 1.7fr) 112px 118px minmax(170px, 1fr);
+}
+.imp-row:last-child { border-bottom: 0; }
+.imp-row.on { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.imp-row.dup { box-shadow: inset 3px 0 0 var(--warn); }
+.imp-row input[type=checkbox], .imp-all input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
+.imp-c.date { font-size: 13px; font-weight: 650; line-height: 1.2; }
+.imp-c.date span { display: block; font-weight: 450; color: var(--ink-3); font-size: 11.5px; }
+.imp-c.lib { min-width: 0; }
+.imp-lib { width: 100%; border: 1px solid transparent !important; background: transparent !important; padding: 5px 8px !important; font-weight: 600; border-radius: 8px; box-shadow: none !important; }
+.imp-lib:hover { border-color: var(--line) !important; } .imp-lib:focus { border-color: var(--accent) !important; background: var(--surface) !important; }
+.imp-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 8px; font-size: 12px; color: var(--ink-3); min-height: 18px; }
+.imp-sub .m-date { display: none; }
+.imp-badge { cursor: default; font-size: 11px; padding: 1px 7px; border: 0; }
+button.imp-badge { cursor: pointer; }
+.imp-c.amt { text-align: end; font-weight: 700; white-space: nowrap; }
+.imp-act, .imp-cat { width: 100%; padding-top: 6px; padding-bottom: 6px; font-size: 13.5px; }
+.imp-cat.empty { border-color: var(--warn); color: var(--warn-ink); }
+
+/* Fichiers importés */
+.imp-lots { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 14px; }
+.imp-lot { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); }
+.imp-lot .sub { display: block; font-size: 12px; color: var(--ink-3); }
+
+@media (max-width: 760px) {
+  .imp-drop { padding: 20px 12px; }
+  .imp-bar { top: 0; }
+  .imp-row { grid-template-columns: 26px 104px minmax(0, 1fr) auto; grid-template-areas: 'cb lib lib amt' '. act cat cat'; padding: 10px 4px; }
+  .imp-c.cb { grid-area: cb; } .imp-c.lib { grid-area: lib; } .imp-c.amt { grid-area: amt; font-size: 15px; }
+  .imp-c.date { display: none; }
+  .imp-c.act { grid-area: act; } .imp-c.cat { grid-area: cat; }
+  .imp-sub .m-date { display: inline; font-weight: 650; color: var(--ink-2); }
+  .imp-bar .prefsel { max-width: 100%; flex: 1 1 100%; order: 5; }
+  .imp-bar .sp, .imp-sum { display: none; }
+  .imp-bar .btn { flex: 1; justify-content: center; }
+  .imp-stat b { font-size: 18px; }
+}

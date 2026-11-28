@@ -191,7 +191,7 @@ create table if not exists public.rappels (
 create unique index if not exists tx_ref_uq on public.tx (user_id, ref) where ref <> '' and deleted_at is null;
 create unique index if not exists categories_key_uq on public.categories (user_id, activite, sens, categorie);
 create unique index if not exists params_key_uq on public.params (user_id, cle);
-create unique index if not exists invoices_num_uq on public.invoices (user_id, numero) where numero <> '' and deleted_at is null;
+-- (index de numérotation des factures : défini dans 0007, une séquence par entreprise)
 create unique index if not exists lots_nom_uq on public.lots (user_id, nom) where deleted_at is null;
 create unique index if not exists clients_nom_uq on public.clients (user_id, nom) where deleted_at is null;
 create unique index if not exists accounts_nom_uq on public.accounts (user_id, nom) where deleted_at is null;

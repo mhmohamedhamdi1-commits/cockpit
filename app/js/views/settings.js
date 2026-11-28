@@ -1,4 +1,4 @@
-import { h, icon, eur, clear, pct } from '../util.js';
+import { h, icon, eur, clear, pct, CURRENCIES } from '../util.js';
 import { S, ops, upsert, del, setParam, action, savePrefs, flush, emit } from '../state.js';
 import { modal, field, select, confirmBox, segmented, toast, empty } from '../ui.js';
 import { applyTheme } from '../main.js';
@@ -28,7 +28,7 @@ function paramInput(label, key, { pctMode = false, step = 'any', hint, type = 'n
 
 function openCategory(c = {}) {
   const editing = !!c.categorie;
-  const act = select(['Perso', 'Freelance', 'Immobilier'], c.activite || 'Perso', editing ? { disabled: true } : {});
+  const act = select(['Perso', 'Entreprise', 'Immobilier'], c.activite || 'Perso', editing ? { disabled: true } : {});
   const sens = select(['Dépense', 'Revenu'], c.sens || 'Dépense', editing ? { disabled: true } : {});
   const nom = h('input', { type: 'text', value: c.categorie || '', disabled: editing });
   const grp = h('input', { type: 'text', value: c.groupe || '', list: 'grp-list', placeholder: 'ex. Logement, Charges…' });
@@ -52,13 +52,13 @@ export function render() {
       h('button', { class: 'btn', onClick: async () => { if (await confirmBox('Recalculer chaque opération et relevé en MAD avec le taux réel du jour où elle a eu lieu (disponible depuis mars 2024 ; avant, le taux actuel est utilisé) ? Chaque montant modifié reste annulable dans l’historique.', { ok: 'Recalculer' })) await ops([action('recompute_rates', { mode: 'historique' })], 'Historique MAD recalculé aux taux réels'); } }, icon('repeat', 16), 'Taux réel à la date de chaque opération'),
       h('button', { class: 'btn ghost', onClick: async () => { if (await confirmBox(`Recalculer toutes les opérations et soldes en MAD avec le taux actuel (1 MAD = ${S.P.taux.toFixed(4).replace('.', ',')} €) ?`, { ok: 'Recalculer' })) await ops([action('recompute_rates')], 'Historique MAD recalculé'); } }, 'Appliquer le taux actuel partout'),
       h('span', { class: 'note', style: { alignSelf: 'center' } }, 'Les nouvelles opérations en MAD prennent automatiquement le taux réel de leur date.')));
-  const fisc = h('div', { class: 'card' }, h('header', null, h('h2', null, 'Freelance — seuils et taux'), h('span', { class: 'sub' }, 'à vérifier chaque année')),
+  const fisc = h('div', { class: 'card' }, h('header', null, h('h2', null, 'Entreprise — seuils et taux'), h('span', { class: 'sub' }, 'à vérifier chaque année')),
     h('div', { class: 'grid3' }, paramInput('Début de la micro-entreprise', 'micro_debut', { type: 'date', hint: 'Les CA avant cette date ne comptent pas ; le 1er exercice est proratisé' }), paramInput('Plafond micro-BNC (€ HT)', 'seuil_micro', { step: 100 }), paramInput('Franchise TVA (€ HT)', 'seuil_tva', { step: 100 }), paramInput('Seuil majoré TVA (€ HT)', 'seuil_tva_maj', { step: 100 }),
       paramInput('Cotisations sociales (%)', 'taux_cotis', { pctMode: true, step: 0.1 }), paramInput('Formation professionnelle (%)', 'taux_cfp', { pctMode: true, step: 0.05 }), paramInput('Provision conseillée (%)', 'taux_provision', { pctMode: true, step: 1, hint: 'Cotisations + impôt : estimation à valider avec un expert-comptable' })));
 
   // catégories
   const groups = [];
-  for (const act of ['Perso', 'Freelance', 'Immobilier']) for (const sens of ['Dépense', 'Revenu']) {
+  for (const act of ['Perso', 'Entreprise', 'Immobilier']) for (const sens of ['Dépense', 'Revenu']) {
     const cs = S.data.categories.filter((c) => c.activite === act && c.sens === sens);
     if (cs.length) groups.push([act, sens, cs]);
   }
@@ -71,7 +71,7 @@ export function render() {
   const theme = h('div', { class: 'card' }, h('header', null, h('h2', null, 'Apparence')),
     h('div', { class: 'stack' },
       field('Langue', segmented(LANGS, S.lang || 'fr', (v) => { S.lang = v; savePrefs(); setLang(v); emit(); })),
-      field('Devise d’affichage', segmented([{ value: 'EUR', label: '€ Euro' }, { value: 'MAD', label: 'Dirham (MAD)' }], S.displayCur || 'EUR', async (v) => { S.displayCur = v; savePrefs(); const { reload } = await import('../state.js'); reload(); }), 'Les montants en euros sont convertis au taux du jour'),
+      field('Devise d’affichage', segmented(CURRENCIES.map((c) => ({ value: c.code, label: c.code })), S.displayCur || 'EUR', async (v) => { S.displayCur = v; savePrefs(); const { reload } = await import('../state.js'); reload(); }), 'Les montants en euros sont convertis au taux du jour'),
       field('Thème', segmented([{ value: 'auto', label: 'Automatique' }, { value: 'light', label: 'Clair' }, { value: 'dark', label: 'Sombre' }], S.theme, (v) => { S.theme = v; savePrefs(); applyTheme(); })),
       h('button', { class: 'btn ghost', onClick: async () => { const { resetLayout } = await import('../enhance.js'); resetLayout(); emit(); toast('Disposition des tableaux réinitialisée'); } }, 'Réinitialiser cartes repliées et ordre des colonnes')));
   return [h('div', { class: 'row2e' }, accountCard(), notifCard()), dataCard(), installCard(), general, fisc, h('div', { class: 'row2e' }, catCard, h('div', { style: { display: 'flex', flexDirection: 'column', gap: '18px' } }, lotCard, theme))];
@@ -124,6 +124,7 @@ const NOTIFS = [
   ['factures', 'Factures en retard / à envoyer'], ['jours', 'Jours travaillés en fin de mois (17 h)'], ['loyers', 'Loyers en retard / à encaisser'],
   ['saisie', 'Rappel de saisie (20 h)'], ['recurrents', 'Opérations récurrentes à générer'], ['releve', 'Relevé de soldes de fin de mois'],
   ['echeances', 'Échéances (URSSAF, impôts, CFE…)'], ['provision', 'Montant à mettre de côté après une facture payée'],
+  ['elec', 'Facture d’électricité de l’immeuble (du 1er au 3 du mois)'], ['imports', 'Opérations importées à valider (lundi)'], ['declarations', 'Échéances de déclaration des entreprises'],
 ];
 function notifCard() {
   const P = Object.fromEntries(S.data.params.map((p) => [p.cle, p.valeur]));

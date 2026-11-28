@@ -26,6 +26,17 @@ async function yahooChart(sym: string, range = '5d', interval = '1d') {
   return null;
 }
 
+// Secteur et industrie d'un titre (Yahoo : la recherche renvoie sector / industry pour les actions ; rien pour les ETF et fonds)
+async function profile(sym: string): Promise<{ secteur: string; industrie: string } | null> {
+  try {
+    const r = await fetch(`https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(sym)}&quotesCount=6&newsCount=0`, { headers: UA, signal: AbortSignal.timeout(6000) });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const q = (j.quotes || []).find((x: any) => String(x.symbol || '').toUpperCase() === sym);
+    return q ? { secteur: q.sector || '', industrie: q.industry || '' } : null;
+  } catch { return null; }
+}
+
 async function quotes(symbols: string[]) {
   const syms = [...new Set(symbols.map((s) => String(s).toUpperCase().trim()).filter((s) => SYM.test(s)))].slice(0, 60);
   const { data: cached } = await admin.from('cours').select('*').in('symbole', syms);
@@ -35,7 +46,11 @@ async function quotes(symbols: string[]) {
     const res = await yahooChart(s);
     if (!res || !res.meta || !(res.meta.regularMarketPrice > 0)) return null;
     const m = res.meta;
-    return { symbole: s, nom: m.longName || m.shortName || s, prix: m.regularMarketPrice, veille: m.chartPreviousClose || m.previousClose || null, devise: m.currency === 'GBp' ? 'GBX' : (m.currency || 'EUR').toUpperCase(), place: m.fullExchangeName || m.exchangeName || '', type: m.instrumentType || '', maj: new Date().toISOString(), source: 'Yahoo Finance' };
+    const old = (cached || []).find((c: any) => c.symbole === s);
+    // secteur : conservé s'il est connu ; sinon recherché (« - » = cherché sans résultat : ETF, fonds, titre non coté)
+    let secteur = old && old.secteur ? old.secteur : '', industrie = old && old.industrie ? old.industrie : '';
+    if (!secteur) { const p = (m.instrumentType || '') === 'EQUITY' ? await profile(s) : null; secteur = p && p.secteur ? p.secteur : '-'; industrie = p ? p.industrie : ''; }
+    return { symbole: s, nom: m.longName || m.shortName || s, prix: m.regularMarketPrice, veille: m.chartPreviousClose || m.previousClose || null, devise: m.currency === 'GBp' ? 'GBX' : (m.currency || 'EUR').toUpperCase(), place: m.fullExchangeName || m.exchangeName || '', type: m.instrumentType || '', maj: new Date().toISOString(), source: 'Yahoo Finance', secteur, industrie };
   }));
   const rows = got.filter(Boolean) as any[];
   if (rows.length) await admin.from('cours').upsert(rows);
@@ -67,7 +82,7 @@ async function search(q: string) {
   const r = await fetch(`https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q.slice(0, 60))}&quotesCount=10&newsCount=0&lang=fr-FR&region=FR`, { headers: UA, signal: AbortSignal.timeout(8000) });
   if (!r.ok) return [];
   const j = await r.json();
-  return (j.quotes || []).filter((x: any) => x.symbol && x.quoteType !== 'OPTION').map((x: any) => ({ symbole: x.symbol, nom: x.longname || x.shortname || x.symbol, place: x.exchDisp || x.exchange || '', type: x.quoteType === 'ETF' ? 'ETF' : x.quoteType === 'MUTUALFUND' ? 'Fonds' : x.quoteType === 'CRYPTOCURRENCY' ? 'Crypto' : 'Action' }));
+  return (j.quotes || []).filter((x: any) => x.symbol && x.quoteType !== 'OPTION').map((x: any) => ({ symbole: x.symbol, nom: x.longname || x.shortname || x.symbol, place: x.exchDisp || x.exchange || '', type: x.quoteType === 'ETF' ? 'ETF' : x.quoteType === 'MUTUALFUND' ? 'Fonds' : x.quoteType === 'CRYPTOCURRENCY' ? 'Crypto' : 'Action', secteur: x.sector || '', industrie: x.industry || '' }));
 }
 
 async function history(symbols: string[]) {

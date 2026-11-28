@@ -14,7 +14,8 @@
   --accent-blue: #007aff;
   --hover: rgba(118, 118, 128, .10);
   --perso: #007aff;
-  --freelance: #ff9500;
+  --entreprise: #ff9500;
+  --bourse: #af52de;
   --immo: #34c759;
   --flow-in: #34c759;
   --flow-out: #ff9500;
@@ -43,7 +44,8 @@
   --accent-blue: #0a84ff;
   --hover: rgba(118, 118, 128, .24);
   --perso: #0a84ff;
-  --freelance: #ff9f0a;
+  --entreprise: #ff9f0a;
+  --bourse: #bf5af2;
   --immo: #30d158;
   --flow-in: #30d158;
   --flow-out: #ff9f0a;
@@ -195,7 +197,7 @@ textarea { resize: vertical; min-height: 70px; }
 
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 99px; background: var(--hover); font-size: 12.5px; font-weight: 550; color: var(--ink-2); white-space: nowrap; }
 .adot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; vertical-align: 1px; }
-.adot.Perso, .bg-Perso { background: var(--perso); } .adot.Freelance, .bg-Freelance { background: var(--freelance); } .adot.Immobilier, .bg-Immobilier { background: var(--immo); }
+.adot.Perso, .bg-Perso { background: var(--perso); } .adot.Entreprise, .bg-Entreprise { background: var(--entreprise); } .adot.Immobilier, .bg-Immobilier { background: var(--immo); } .adot.Bourse, .bg-Bourse { background: var(--bourse); }
 .pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 99px; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .pill.good { background: var(--good-bg); color: var(--good-ink); }
 .pill.warn { background: var(--warn-bg); color: var(--warn-ink); }
@@ -501,8 +503,9 @@ input.otp { font: 700 26px/1 var(--mono); letter-spacing: .35em; text-align: cen
 .card.collapsed > :not(header) { display: none !important; }
 .card.collapsed > header { margin-bottom: 0; }
 .card.collapsed { padding-bottom: 14px; }
-.card.maxed { position: fixed; inset: 18px; z-index: 95; overflow: auto; max-width: none; box-shadow: var(--shadow-lg); }
-body.has-max::after { content: ""; position: fixed; inset: 0; background: rgba(0, 0, 0, .35); backdrop-filter: blur(2px); z-index: 94; }
+/* Carte agrandie : voile sombre dessiné par l'ombre de la carte elle-même (jamais de flou, jamais de voile orphelin) */
+.card.maxed { position: fixed; inset: 18px; z-index: 95; overflow: auto; max-width: none; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .42), var(--shadow-lg); }
+body.has-max { overflow: hidden; }
 .tbl th.sortable { cursor: pointer; user-select: none; }
 .tbl th.sortable:hover { color: var(--ink); }
 .tbl th.sorted { color: var(--accent-blue, var(--ink)); }
@@ -583,3 +586,60 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent-blue); bo
 }
 .card:has(> .tbl), .card:has(> table) { overflow-x: auto; }
 .card:has(> .tbl) > .tbl { min-width: 100%; }
+
+/* ============ v3 : santé par domaine, comparaison pays, immobilier, confidentialité ============ */
+.hscore { font-weight: 650; color: var(--ink-3); font-size: 15px; }
+.hgroup + .hgroup { margin-top: 8px; }
+.hgrp { display: flex; align-items: center; gap: 8px; margin: 10px 0 4px; }
+.hgs { margin-inline-start: auto; font-weight: 750; font-size: 12.5px; padding: 1px 8px; border-radius: 8px; background: var(--hover); color: var(--ink-2); text-transform: none; letter-spacing: 0; }
+.hgs.good { background: var(--good-bg); color: var(--good-ink); } .hgs.warn { background: var(--warn-bg); color: var(--warn-ink); } .hgs.bad { background: var(--crit-bg); color: var(--crit-ink); }
+.hi .advice { display: flex; gap: 5px; align-items: flex-start; margin-top: 3px; font-size: 12px; color: var(--ink-2); font-weight: 550; }
+.hi .advice .i { flex: none; margin-top: 2px; color: var(--info-ink); }
+.hnext { background: var(--surface-2); border-radius: 14px; padding: 10px 14px; margin: 4px 0 10px; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+.hnext b { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); }
+.hnext .gain { display: inline-block; min-width: 62px; margin-inline-end: 6px; font-weight: 750; color: var(--good-ink); }
+.hnext > div > b { text-transform: none; letter-spacing: 0; font-size: 13px; color: var(--ink); }
+.hnext.ok { flex-direction: row; align-items: center; gap: 6px; color: var(--good-ink); font-weight: 650; background: var(--good-bg); }
+.actions { display: flex; flex-direction: column; gap: 8px; }
+.act { display: flex; gap: 12px; align-items: flex-start; padding: 8px 12px; background: var(--surface-2); border-radius: 12px; }
+.act > b { color: var(--good-ink); min-width: 56px; }
+.act .sub { display: block; color: var(--ink-2); font-size: 12.5px; font-weight: 450; }
+tr.total td { border-top: 1px solid var(--line); }
+tr.apart td { color: var(--ink-3); border-top: 1px dashed var(--line); }
+.cashsep { margin: 14px 0 2px; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); }
+.cashrow.apart .v { color: var(--ink-3); }
+/* comparaison pays */
+.cmpblock + .cmpblock { margin-top: 16px; }
+.cmphead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.cmprow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.cmpcell { background: var(--surface-2); border-radius: 16px; padding: 12px 14px; }
+.cmpfl { font-size: 13px; font-weight: 650; color: var(--ink-2); }
+.cmptop { font-size: 26px; font-weight: 780; letter-spacing: -.02em; margin-top: 2px; }
+.cmpsub { font-size: 12px; color: var(--ink-3); margin-top: -2px; }
+.cmpbar { height: 6px; border-radius: 4px; background: var(--line); margin: 8px 0 6px; overflow: hidden; }
+.cmpbar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+.cmpmed { font-size: 12px; color: var(--ink-2); font-weight: 550; }
+.cmpsave { margin-top: 14px; font-size: 13px; }
+@media (max-width: 760px) { .cmprow { grid-template-columns: 1fr; } .cmptop { font-size: 22px; } }
+/* immobilier : associés, capital, analyses */
+.assoc { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin: 10px 0 14px; }
+.assoc .ac { background: var(--surface-2); border-radius: 16px; padding: 14px; }
+.assoc .ac h3 { font-size: 15px; font-weight: 700; display: flex; justify-content: space-between; gap: 8px; }
+.assoc .ac dl { margin: 8px 0 0; display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: 13px; }
+.assoc .ac dt { color: var(--ink-3); } .assoc .ac dd { margin: 0; text-align: right; font-weight: 600; }
+.assoc .ac.big dd.v { font-size: 17px; font-weight: 750; }
+.owe { display: flex; gap: 10px; align-items: center; padding: 12px 14px; border-radius: 14px; background: var(--warn-bg); color: var(--warn-ink); font-weight: 650; margin-bottom: 8px; }
+.owe.ok { background: var(--good-bg); color: var(--good-ink); }
+.owe .i { flex: none; }
+.insights { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.insight { border-radius: 16px; padding: 12px 14px; background: var(--surface-2); border-inline-start: 4px solid var(--line); }
+.insight.good { border-color: var(--good); } .insight.warn { border-color: var(--warn); } .insight.bad { border-color: var(--crit); } .insight.info { border-color: var(--accent); }
+.insight .it { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; font-size: 13.5px; }
+.insight .iv { font-weight: 780; }
+.insight p { margin: 4px 0 0; font-size: 12.5px; color: var(--ink-2); }
+.insight .adv { margin-top: 5px; font-size: 12px; color: var(--ink-3); font-weight: 550; }
+.lotsbar { display: flex; flex-wrap: wrap; gap: 8px; }
+.filebox .row { flex-wrap: wrap; }
+/* mode confidentialité : montants floutés */
+body.privacy .num, body.privacy .kpi .v, body.privacy .cmptop, body.privacy .hv, body.privacy .cashrow .v, body.privacy .barlist .val, body.privacy svg text { filter: blur(7px); transition: filter .15s; user-select: none; }
+body.privacy .num:hover, body.privacy .kpi .v:hover { filter: none; }

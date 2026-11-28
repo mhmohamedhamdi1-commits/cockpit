@@ -1,4 +1,4 @@
-import { h, icon, eur, money, monthLong, fmtDate, clear, sum, addMonths } from '../util.js';
+import { h, icon, eur, money, monthLong, fmtDate, clear, sum, addMonths, CUR_CODES } from '../util.js';
 import { S, ops, upsert, del, action, todayMonth, catsFor, emit } from '../state.js';
 import { modal, field, select, confirmBox, empty, pill, toast, toggle } from '../ui.js';
 import * as core from '../core.js';
@@ -10,7 +10,7 @@ function openForm(r = {}) {
   const editing = !!r.id;
   const f = { activite: r.activite || 'Perso', sens: r.sens || 'Dépense', categorie: r.categorie || '' };
   const lib = h('input', { type: 'text', value: r.libelle || '', placeholder: 'ex. Loyer, Navigo, Abonnement…' });
-  const act = select(['Perso', 'Freelance', 'Immobilier'], f.activite);
+  const act = select(['Perso', 'Entreprise', 'Immobilier'], f.activite);
   const sens = select(['Dépense', 'Revenu'], f.sens);
   const cat = h('select');
   const fillCat = () => { clear(cat); catsFor(f.activite, f.sens).forEach((c) => cat.append(h('option', { value: c.categorie, selected: c.categorie === f.categorie }, `${c.icone} ${c.categorie}`))); f.categorie = cat.value; };
@@ -19,7 +19,7 @@ function openForm(r = {}) {
   cat.addEventListener('change', () => { f.categorie = cat.value; });
   fillCat();
   const mont = h('input', { type: 'number', step: 0.01, min: 0, value: r.montant || '' });
-  const dev = select(['EUR', 'MAD'], r.devise || 'EUR');
+  const dev = select(CUR_CODES, r.devise || 'EUR');
   const jour = h('input', { type: 'number', min: 1, max: 31, value: r.jour || 1 });
   const deb = h('input', { type: 'date', value: r.debut || '' }), fin = h('input', { type: 'date', value: r.fin || '' });
   const tiers = h('input', { type: 'text', value: r.tiers || '' });
@@ -66,7 +66,7 @@ export function render() {
 
 // ---------- Échéances et rappels (notifiés sur tes appareils) ----------
 const FREQS = ['Une fois', 'Mensuel', 'Trimestriel', 'Annuel'];
-const CATS = ['Fiscal', 'Freelance', 'Immobilier', 'Perso'];
+const CATS = ['Fiscal', 'Entreprise', 'Immobilier', 'Perso'];
 function openRappel(r = {}) {
   const editing = !!r.id;
   const titre = h('input', { type: 'text', value: r.titre || '', placeholder: 'ex. Déclaration URSSAF, CFE, taxe foncière…' });

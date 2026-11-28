@@ -1,12 +1,14 @@
-import { h, icon, eur, money, pct, fmtDate, sum, clear, monthLabel, parseAmount, num2 } from '../util.js';
-import { S, ops, upsert, del } from '../state.js';
+import { h, icon, eur, money, pct, fmtDate, sum, clear, monthLabel, parseAmount, num2, CUR_CODES, curSym } from '../util.js';
+import { S, ops, upsert, del, rateToEur } from '../state.js';
 import { lineChart } from '../charts.js';
 import { modal, field, select, confirmBox, empty, toast } from '../ui.js';
 import { kpi, delta } from './common.js';
+import { portfolioNow, ensureQuotes, valueAt, netWorthParts } from '../market.js';
+import { donut, PALETTE } from '../charts.js';
 
 export function meta() { return { title: 'Patrimoine', sub: 'Soldes de tes comptes à chaque relevé', immoToggle: false }; }
 
-const rate = (cur) => (cur === 'MAD' ? S.P.taux : 1);
+const rate = (cur) => rateToEur(cur);
 function byDate() {
   const m = new Map();
   for (const s of S.data.snapshots) { const e = m.get(s.date) || { date: s.date, total: 0, items: new Map() }; e.total += s.soldeEur; e.items.set(s.compte, s); m.set(s.date, e); }
@@ -36,7 +38,7 @@ function openSnapshotForm() {
     if (await ops(list, 'Relevé enregistré')) m.close();
   };
   const m = modal({ title: 'Nouveau relevé de soldes', sub: 'Laisse vide un compte inchangé : le dernier solde est reporté', width: 560,
-    body: [field('Date du relevé', date), h('table', { class: 'tbl' }, h('tbody', null, inputs.map((x) => h('tr', null, h('td', null, x.a.nom, h('span', { class: 'sub' }, `${x.a.dispo === 'Oui' ? 'Disponible' : 'Bloqué / placé'}${x.last ? ` · dernier : ${money(x.last.solde, x.a.devise, 2)}` : ''}`)), h('td', { style: { width: '170px' } }, x.el), h('td', { class: 'muted', style: { width: '42px' } }, x.a.devise === 'MAD' ? 'MAD' : '€')))))],
+    body: [field('Date du relevé', date), h('table', { class: 'tbl' }, h('tbody', null, inputs.map((x) => h('tr', null, h('td', null, x.a.nom, h('span', { class: 'sub' }, `${x.a.dispo === 'Oui' ? 'Disponible' : 'Bloqué / placé'}${x.last ? ` · dernier : ${money(x.last.solde, x.a.devise, 2)}` : ''}`)), h('td', { style: { width: '170px' } }, x.el), h('td', { class: 'muted', style: { width: '42px' } }, curSym(x.a.devise))))))],
     footer: [h('span', null, 'Total : ', tot), h('span', { class: 'sp' }), h('button', { class: 'btn', onClick: () => m.close() }, 'Annuler'), h('button', { class: 'btn primary lg', onClick: go }, 'Enregistrer le relevé')] });
 }
 
@@ -49,7 +51,7 @@ function openAccounts() {
     box.append(h('table', { class: 'tbl' }, h('thead', null, h('tr', null, h('th', null, 'Compte'), h('th', null, 'Devise'), h('th', null, 'Disponible ?'), h('th', null))),
       h('tbody', null, rows.map((r, i) => {
         const n = h('input', { type: 'text', value: r.nom, placeholder: 'Nom du compte' }); n.addEventListener('input', () => { r.nom = n.value; });
-        const d = select(['EUR', 'MAD'], r.devise); d.addEventListener('change', () => { r.devise = d.value; });
+        const d = select(CUR_CODES, r.devise); d.addEventListener('change', () => { r.devise = d.value; });
         const v = select([{ value: 'Oui', label: 'Oui' }, { value: 'Non', label: 'Non (bloqué / placé)' }], r.dispo); v.addEventListener('change', () => { r.dispo = v.value; });
         return h('tr', null, h('td', null, n), h('td', { style: { width: '90px' } }, d), h('td', { style: { width: '190px' } }, v),
           h('td', null, h('button', { class: 'btn sm ghost danger', onClick: () => { if (r.id) removed.push(r.id); rows.splice(i, 1); draw(); } }, icon('trash', 14))));
@@ -65,39 +67,53 @@ function openAccounts() {
 }
 
 export function render() {
+  ensureQuotes();
   const dates = byDate();
-  if (!dates.length) return h('div', { class: 'card' }, empty('Aucun relevé de soldes', 'Enregistre les soldes de tes comptes (une fois par mois suffit) pour suivre ton patrimoine.',
+  const pf = portfolioNow(), bourse = pf.total.value || 0;   // la valeur du portefeuille de bourse est ajoutée AUTOMATIQUEMENT (cours du marché)
+  if (!dates.length && !bourse) return h('div', { class: 'card' }, empty('Aucun relevé de soldes', 'Enregistre les soldes de tes comptes (une fois par mois suffit) pour suivre ton patrimoine.',
     h('button', { class: 'btn primary', onClick: openSnapshotForm }, icon('plus', 16), 'Premier relevé')));
   const last = dates[dates.length - 1], prev = dates[dates.length - 2];
-  // totaux disponible / bloqué
   const dispoOf = (compte) => (S.data.accounts.find((a) => a.nom === compte) || {}).dispo === 'Oui';
   const latest = new Map();
   for (const d of dates) for (const [c, s] of d.items) latest.set(c, s);
   const dispo = sum([...latest.entries()].filter(([c]) => dispoOf(c)), ([, s]) => s.soldeEur);
-  const total = sum([...latest.values()], (s) => s.soldeEur);
-  const d = prev ? last.total - prev.total : 0;
+  const comptes = sum([...latest.values()], (s) => s.soldeEur);
+  const total = comptes + bourse;
+  const bAt = (date) => (S.data.ordres && S.data.ordres.length ? valueAt(date) : 0);
+  const prevTotal = prev ? prev.total + bAt(prev.date) : null, lastTotal = last ? last.total + bAt(last.date) : null;
+  const d = prev ? total - prevTotal : 0;
   const kpis = h('div', { class: 'kpis' },
-    kpi({ title: 'Patrimoine total', ic: 'bank', value: eur(total), sub: [h('span', null, `Relevé du ${fmtDate(last.date)}`)] }),
+    kpi({ title: 'Patrimoine total', ic: 'bank', value: eur(total), sub: [h('span', null, `${last ? 'Comptes au ' + fmtDate(last.date) : 'Comptes'} + bourse en direct`)] }),
     kpi({ title: 'Disponible', ic: 'wallet', value: eur(dispo), sub: [h('span', null, pct(total ? dispo / total : 0) + ' du patrimoine')] }),
-    kpi({ title: 'Bloqué / placé', ic: 'key', value: eur(total - dispo), sub: [h('span', null, 'Actions, caution, prêts…')] }),
-    kpi({ title: 'Évolution', ic: 'chart', value: prev ? h('span', { class: d >= 0 ? 'pos' : 'neg' }, (d >= 0 ? '+' : '') + eur(d)) : '—', sub: [prev ? delta(last.total, prev.total) : null, h('span', null, prev ? `depuis le ${fmtDate(prev.date)}` : 'Fais un 2ᵉ relevé pour voir l’évolution')] }));
+    kpi({ title: 'Bloqué / placé', ic: 'key', value: eur(total - dispo), sub: [h('span', null, bourse ? `dont bourse ${eur(bourse)}` : 'Actions, caution, prêts…')] }),
+    kpi({ title: 'Évolution', ic: 'chart', value: prev ? h('span', { class: d >= 0 ? 'pos' : 'neg' }, (d >= 0 ? '+' : '') + eur(d)) : '—', sub: [prev ? delta(total, prevTotal) : null, h('span', null, prev ? `depuis le ${fmtDate(prev.date)}` : 'Fais un 2ᵉ relevé pour voir l’évolution')] }));
 
   let pts = dates.filter((x) => x.date.slice(0, 7) >= S.period.from && x.date.slice(0, 7) <= S.period.to);
   if (pts.length < 2) pts = dates;
-  const chart = h('div', { class: 'card' }, h('header', null, h('h2', null, 'Évolution du patrimoine'), h('span', { class: 'sub' }, `${pts.length} relevé${pts.length > 1 ? 's' : ''}`)),
-    pts.length > 1 ? lineChart({ points: pts.map((p) => ({ t: new Date(p.date).getTime(), y: p.total, label: fmtDate(p.date).replace(/^\d+ /, ''), full: fmtDate(p.date) })) })
+  const series = pts.map((p) => ({ t: new Date(p.date).getTime(), y: p.total + bAt(p.date), label: fmtDate(p.date).replace(/^\d+ /, ''), full: fmtDate(p.date) }));
+  if (bourse && last && S.today > last.date) series.push({ t: new Date(S.today).getTime(), y: total, label: 'Aujourd’hui', full: `Aujourd’hui (${fmtDate(S.today)})` });
+  const chart = h('div', { class: 'card' }, h('header', null, h('h2', null, 'Évolution du patrimoine'), h('span', { class: 'sub' }, `${series.length} point${series.length > 1 ? 's' : ''}${bourse ? ' · bourse incluse' : ''}`)),
+    series.length > 1 ? lineChart({ points: series })
       : h('div', { class: 'empty' }, h('b', null, 'Un seul relevé pour l’instant'), 'Fais un relevé chaque fin de mois : la courbe apparaîtra automatiquement.'));
 
   const accs = [...S.data.accounts].sort((a, b) => a.ordre - b.ordre);
+  const rows = accs.map((a) => {
+    const [l, p] = lastAndPrev(a.nom);
+    const dv = l && p ? l.soldeEur - p.soldeEur : null;
+    return h('tr', null, h('td', null, a.nom, l ? h('span', { class: 'sub' }, fmtDate(l.date)) : null), h('td', null, a.dispo === 'Oui' ? h('span', { class: 'pill good' }, 'Disponible') : h('span', { class: 'pill mute' }, 'Bloqué / placé')),
+      h('td', { class: 'r num' }, l ? money(l.solde, a.devise, 2) : '—'), h('td', { class: 'r num' }, l ? eur(l.soldeEur) : '—'),
+      h('td', { class: 'r num ' + (dv > 0 ? 'pos' : dv < 0 ? 'neg' : 'muted') }, dv == null ? '—' : (dv > 0 ? '+' : '') + eur(dv)));
+  });
+  if (bourse) rows.push(h('tr', { class: 'click', onClick: () => { location.hash = '#/bourse'; } }, h('td', null, 'Portefeuille de bourse', h('span', { class: 'sub' }, `${pf.open.length} ligne${pf.open.length > 1 ? 's' : ''} · valorisé aux cours du marché`)), h('td', null, h('span', { class: 'pill info' }, 'Automatique')),
+    h('td', { class: 'r num' }, eur(bourse)), h('td', { class: 'r num' }, eur(bourse)), h('td', { class: 'r num ' + (pf.total.latent >= 0 ? 'pos' : 'neg') }, `${pf.total.latent >= 0 ? '+' : ''}${eur(pf.total.latent)} latent`)));
   const tbl = h('div', { class: 'card' }, h('header', null, h('h2', null, 'Mes comptes'), h('div', { class: 'right' }, h('button', { class: 'btn sm', onClick: openAccounts }, icon('sliders', 14), 'Gérer les comptes'), h('button', { class: 'btn primary', onClick: openSnapshotForm }, icon('plus', 16), 'Nouveau relevé'))),
     h('table', { class: 'tbl' }, h('thead', null, h('tr', null, h('th', null, 'Compte'), h('th', null, 'Statut'), h('th', { class: 'r' }, 'Solde'), h('th', { class: 'r' }, 'En euros'), h('th', { class: 'r' }, 'Variation'))),
-      h('tbody', null, accs.map((a) => {
-        const [l, p] = lastAndPrev(a.nom);
-        const dv = l && p ? l.soldeEur - p.soldeEur : null;
-        return h('tr', null, h('td', null, a.nom, l ? h('span', { class: 'sub' }, fmtDate(l.date)) : null), h('td', null, a.dispo === 'Oui' ? h('span', { class: 'pill good' }, 'Disponible') : h('span', { class: 'pill mute' }, 'Bloqué / placé')),
-          h('td', { class: 'r num' }, l ? money(l.solde, a.devise, 2) : '—'), h('td', { class: 'r num' }, l ? eur(l.soldeEur) : '—'),
-          h('td', { class: 'r num ' + (dv > 0 ? 'pos' : dv < 0 ? 'neg' : 'muted') }, dv == null ? '—' : (dv > 0 ? '+' : '') + eur(dv)));
-      })),
+      h('tbody', null, rows),
       h('tfoot', null, h('tr', null, h('td', { colspan: 3 }, 'Total'), h('td', { class: 'r num' }, eur(total)), h('td')))));
-  return [kpis, chart, tbl];
+  const nwp = netWorthParts();
+  const classes = [['Liquidités (comptes disponibles)', nwp.liquide], ['Épargne bloquée / placée', nwp.bloque], ['Bourse (portefeuille)', nwp.bourse], ['Immobilier (ma part)', nwp.immo]].filter(([, v]) => v > 0);
+  const items = classes.map(([label, value], i) => ({ label, value, color: PALETTE[i % PALETTE.length] }));
+  const allocCard = items.length ? h('div', { class: 'card' }, h('header', null, h('h2', null, 'Répartition du patrimoine'), h('span', { class: 'sub' }, 'par classe d’actifs, immobilier compté à ma part (valeur estimée ou prix de revient)')),
+    h('div', { class: 'alloc' }, donut(items, { center: eur(nwp.global) }), h('div', { class: 'legendv' }, items.map((i) => h('div', null, h('i', { style: { background: i.color } }), h('span', null, i.label), h('b', { class: 'num' }, pct(i.value / (nwp.global || 1)) + ' · ' + eur(i.value))))))) : null;
+  return [kpis, chart, allocCard, tbl];
 }

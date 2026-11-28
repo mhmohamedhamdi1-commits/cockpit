@@ -1,0 +1,7 @@
+﻿Type;Produit;Date de début;Date de fin;Description;Montant;Frais;Devise;État;Solde
+Paiement par carte;Actuel;2026-10-01 08:00:00;2026-10-02 02:00:00;Carrefour Market;-1 234,56;0,00;EUR;TERMINÉ;3 765,44
+Paiement par carte;Actuel;2026-10-03 09:00:00;2026-10-04 02:00:00;SNCF Connect;-89,90;0,00;EUR;TERMINÉ;3 675,54
+Virement;Actuel;2026-10-05 09:00:00;2026-10-05 09:00:01;Loyer octobre; -1150,00;0,00;EUR;TERMINÉ;2 525,54
+Virement;Actuel;2026-10-06 09:00:00;2026-10-06 09:00:01;Remboursement ami;45,50;0,00;EUR;TERMINÉ;2 571,04
+Paiement par carte;Actuel;2026-10-07 09:00:00;2026-10-08 02:00:00;Boulangerie Café "Chez Lulu";-3,40;0,00;EUR;ANNULÉ;
+Frais;Actuel;2026-10-31 00:00:00;2026-10-31 00:00:00;Abonnement Revolut Premium;-7,99;0,00;EUR;TERMINÉ;2 563,05

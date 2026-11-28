@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../..');
-const SRC = path.join(ROOT, 'app'), DIST = path.join(ROOT, 'dist');
+const SRC = path.join(ROOT, 'app'), DIST = process.env.DIST_DIR ? path.resolve(process.env.DIST_DIR) : path.join(ROOT, 'dist');   // DIST_DIR : tests d'interface en parallèle
 const e = process.env;
 
 const fail = (m) => { console.error('ERREUR build : ' + m); process.exit(1); };
@@ -34,7 +34,8 @@ fs.writeFileSync(path.join(DIST, 'config.js'), `// Généré le ${new Date().toI
 export const CONFIG = ${JSON.stringify({ url, key, vapid, backupUrl: backupUrl || '__BACKUP_URL__', allowSignup: e.SIGNUP_LOCKED !== '1', build: buildId }, null, 2)};
 `);
 
-const assets = ['/', ...walk(DIST).filter((f) => !['sw.js', '_headers'].includes(f) && !f.endsWith('.map')).map((f) => '/' + f)];
+// pdf.js (import de relevés PDF, ~1,7 Mo) n'est chargé qu'à la demande : pas dans le pré-cache hors ligne
+const assets = ['/', ...walk(DIST).filter((f) => !['sw.js', '_headers'].includes(f) && !f.endsWith('.map') && !f.startsWith('vendor/pdf')).map((f) => '/' + f)];
 const swPath = path.join(DIST, 'sw.js');
 fs.writeFileSync(swPath, fs.readFileSync(swPath, 'utf8').replace('__BUILD__', buildId).replace('__ASSETS__', JSON.stringify(assets)));
 

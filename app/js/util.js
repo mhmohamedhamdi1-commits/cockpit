@@ -74,6 +74,18 @@ const ICONS = {
   message: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
   trend: 'M22 7l-8.5 8.5-5-5L2 17M16 7h6v6',
   globe: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z',
+  inbox: 'M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z',
+  percent: 'M19 5 5 19M6.5 9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM17.5 20a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
+  target: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12zM12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z',
+  eye: 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+  eyeoff: 'M9.9 4.2A10 10 0 0 1 12 4c6.4 0 10 8 10 8a17 17 0 0 1-3.2 4.3M6.6 6.6A16.8 16.8 0 0 0 2 12s3.6 8 10 8a9.7 9.7 0 0 0 5.4-1.6M2 2l20 20M9.9 9.9a3 3 0 0 0 4.2 4.2',
+  download: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3',
+  upload: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12',
+  scale: 'M12 3v18M8 21h8M5 7h14M5 7l-3 8a3 3 0 0 0 6 0zM19 7l-3 8a3 3 0 0 0 6 0z',
+  bell: 'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0',
+  file: 'M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5zM14 2v6h6',
+  pie: 'M21.2 15.9A10 10 0 1 1 8 2.8M22 12A10 10 0 0 0 12 2v10z',
+  link: 'M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7',
   heart: 'M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z',
 };
 export function icon(name, size = 18) {
@@ -90,9 +102,16 @@ const fixMinus = (s) => s.replace('-', '\u2212').replace(/\u202f/g, '\u00a0');
 export const num0 = (v) => fixMinus(nf0.format(Math.round(v || 0)));
 export const num2 = (v) => fixMinus(nf2.format(v || 0));
 export const num1 = (v) => fixMinus(nf1.format(v || 0));
+// Devises gérées : EUR, MAD, USD (US), GBP (UK), CHF (Suisse)
+export const CURRENCIES = [
+  { code: 'EUR', sym: '€', label: 'EUR — Euro' }, { code: 'MAD', sym: 'MAD', label: 'MAD — Dirham marocain' },
+  { code: 'USD', sym: '$', label: 'USD — Dollar (US)' }, { code: 'GBP', sym: '£', label: 'GBP — Livre sterling (UK)' }, { code: 'CHF', sym: 'CHF', label: 'CHF — Franc suisse' },
+];
+export const CUR_CODES = CURRENCIES.map((c) => c.code);
+export const curSym = (cur) => (CURRENCIES.find((c) => c.code === cur) || { sym: cur }).sym;
 export function money(v, cur = 'EUR', dec = 0) {
   const n = dec === 2 ? num2(v) : num0(v);
-  return cur === 'EUR' ? `${n} €` : cur === 'USD' ? `${n} $` : `${n} ${cur}`;
+  return `${n}\u00a0${curSym(cur)}`;
 }
 // Devise d'affichage des montants en euros (EUR par défaut ; MAD = conversion au taux du jour)
 let DISPLAY = { cur: 'EUR', rate: 1 };

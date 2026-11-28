@@ -18,7 +18,7 @@ const results = [];
 const step = async (name, fn) => {
   const t = Date.now();
   try { await fn(); results.push(['✅', name, Date.now() - t]); console.log('✅', name); }
-  catch (e) { results.push(['❌', name, Date.now() - t, e.message]); console.log('❌', name, '\n   ', e.message.split('\n')[0]); }
+  catch (e) { results.push(['❌', name, Date.now() - t, e.message]); console.log('❌', name, '\n   ', e.message.split('\n')[0]); for (const [i, pg] of (globalThis.__pages || []).entries()) { try { await pg.screenshot({ path: `/tmp/e2e-fail-${i}.png` }); } catch { /* page fermée */ } } for (const pg of globalThis.__pages || []) if (pg.errors && pg.errors.length) console.log('    erreurs de page :', pg.errors.slice(0, 3).join(' | ').slice(0, 400)); }
 };
 
 // ---------- TOTP (RFC 6238) ----------
@@ -101,13 +101,14 @@ async function openTxByLabel(p, label) {
 const A = await device('PC', { viewport: { width: 1440, height: 900 } });
 const B = await device('iPhone', devices['iPhone 14']);
 const tag = crypto.randomBytes(2).toString('hex');
+globalThis.__pages = [A.page, B.page];
 
 await step('Connexion mot de passe + code MFA (PC)', async () => { await login(A.page); });
 await step('Connexion mot de passe + code MFA (iPhone)', async () => { await login(B.page); await B.page.waitForSelector('.tabbar .fab'); });
 
 await step('Les 7 écrans s’affichent sans erreur avec les vraies données (PC + iPhone)', async () => {
   for (const d of [A, B]) {
-    for (const r of ['dashboard', 'ops', 'freelance', 'immo', 'wealth', 'recurring', 'settings']) {
+    for (const r of ['dashboard', 'ops', 'entreprise', 'immo', 'wealth', 'recurring', 'settings']) {
       await d.page.goto(`${APP}/#/${r}`);
       await d.page.waitForSelector('.page .card');
       assert.equal(await d.page.$('.page pre'), null, `${d.name} ${r} : erreur d'affichage`);
@@ -313,6 +314,23 @@ await step('Taux de change réel affiché et appliqué aux nouvelles opérations
   assert.ok(Math.abs(Number(data.taux) - Number(fx.rate)) < 0.002, `taux appliqué ${data.taux} ≈ taux réel ${fx.rate}`);
 });
 
+
+await step('Fonctions serveur v3 : aperçu des notifications (électricité, imports, échéances) et secteur des titres', async () => {
+  const r = await T1.client.functions.invoke('rappels', { body: { preview: true, force_hour: 8 } });
+  if (r.error) throw new Error('rappels : ' + (r.error.message || r.error));
+  assert.ok(r.data && r.data.ok && Array.isArray(r.data.notes), 'aperçu des notifications');
+  const s = await T1.client.functions.invoke('bourse', { body: { action: 'search', q: 'GOOGL' } });
+  if (s.error) throw new Error('bourse : ' + (s.error.message || s.error));
+  const g = s.data.results.find((x) => x.symbole === 'GOOGL');
+  assert.ok(g && g.secteur, 'secteur renvoyé par la recherche : ' + JSON.stringify(g));
+  const q = await T1.client.functions.invoke('bourse', { body: { action: 'quotes', symbols: ['GOOGL', 'CW8.PA'] } });
+  const gq = q.data.quotes.find((x) => x.symbole === 'GOOGL');
+  assert.ok(gq && gq.secteur && gq.secteur !== '-', 'secteur dans les cours : ' + JSON.stringify(gq && gq.secteur));
+  for (const pair of ['USD/EUR', 'GBP/EUR', 'CHF/EUR']) {
+    const { data: fx } = await T1.client.from('fx_rates').select('rate').eq('pair', pair).order('date', { ascending: false }).limit(1);
+    assert.ok(fx && fx.length && fx[0].rate > 0, `taux ${pair} disponible`);
+  }
+});
 
 await step('Projet partagé : lien d’invitation, l’invité voit UNIQUEMENT ce projet en lecture seule, retrait d’accès immédiat', async () => {
   // le propriétaire (T1) range ses lots dans « Amal 1 » et crée un « Projet 2 » privé

@@ -1,4 +1,4 @@
-import { h, icon, eur, money, num0, num2 } from '../util.js';
+import { h, icon, eur, money, num0, num2, curSym } from '../util.js';
 import { S } from '../state.js';
 import { iconOf, weight } from '../calc.js';
 
@@ -7,9 +7,9 @@ export const catChip = (t) => h('span', { class: 'chip' }, iconOf(t), t.categori
 export function amountEl(t, { showEur = true } = {}) {
   const sign = t.sens === 'Revenu' ? '+' : '−';
   const cls = t.nature === 'Courant' ? (t.sens === 'Revenu' ? 'pos' : '') : 'muted';
-  const main = `${sign}${t.montant % 1 ? num2(t.montant) : num0(t.montant)} ${t.devise === 'MAD' ? 'MAD' : '€'}`;
+  const main = `${sign}${t.montant % 1 ? num2(t.montant) : num0(t.montant)} ${curSym(t.devise)}`;
   return h('div', { class: 'num', style: { textAlign: 'right', fontWeight: 650 } }, h('span', { class: cls }, main),
-    t.devise === 'MAD' && showEur ? h('span', { class: 'sub muted', style: { display: 'block', fontSize: '12px', fontWeight: 450 } }, `≈ ${eur(t.montantEur)}`) : null);
+    t.devise !== 'EUR' && showEur ? h('span', { class: 'sub muted', style: { display: 'block', fontSize: '12px', fontWeight: 450 } }, `≈ ${eur(t.montantEur)}`) : null);
 }
 export function natureBadge(t) {
   if (t.nature === 'Courant') return null;

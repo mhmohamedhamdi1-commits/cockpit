@@ -1,0 +1,6 @@
+Date started (UTC),Date completed (UTC),ID,Type,State,Description,Reference,Payer,Card number,Card label,Card state,Orig currency,Orig amount,Payment currency,Amount,Total amount,Exchange rate,Fee,Fee currency,Balance,Account,Beneficiary account number,Beneficiary sort code or routing number,Beneficiary IBAN,Beneficiary BIC,MCC,Related transaction id,Spend program
+2027-01-05,2027-01-06,id1,CARD_PAYMENT,COMPLETED,Notion Labs,,,,,,USD,10.00,EUR,-9.20,-9.20,0.92,0.00,EUR,2990.80,Main,,,,,5734,,
+2027-01-10,2027-01-10,id2,TRANSFER,COMPLETED,Talan SAS,Facture F-2027-001,Talan SAS,,,,EUR,15600.00,EUR,15600.00,15600.00,,0.00,EUR,18590.80,Main,,,,,,,
+2027-01-12,2027-01-12,id3,CARD_PAYMENT,COMPLETED,SNCF,Déplacement client,,,,,EUR,-120.00,EUR,-120.00,-120.50,,0.50,EUR,18470.30,Main,,,,,4112,,
+2027-01-15,2027-01-15,id4,TRANSFER,COMPLETED,Cabinet Compta,Honoraires janvier,,,,,EUR,-300.00,EUR,-300.00,-300.00,,0.00,EUR,18170.30,Main,FR7612345,,,,,,
+2027-01-20,2027-01-20,id5,CARD_PAYMENT,DECLINED,Casino,,,,,,EUR,-50.00,EUR,-50.00,-50.00,,0.00,EUR,,Main,,,,,,,

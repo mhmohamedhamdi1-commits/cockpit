@@ -7,9 +7,14 @@ export const inRange = (date, p) => { const m = date.slice(0, 7); return m >= p.
 export const weight = (t) => (t.activite !== 'Immobilier' ? 1 : S.route === 'immo' && S.immoView === 'full' ? 1 : partOf(t.projetId));
 export const eurOf = (t) => t.montantEur * weight(t);
 
-export function txs({ period = S.period, activity = S.activity } = {}) {
-  return S.data.tx.filter((t) => inRange(t.date, period) && (activity === 'Tout' || t.activite === activity));
+// Règle « Tout » : Perso + Immobilier se cumulent ; l'Entreprise n'est JAMAIS ajoutée (une facture devient un salaire dans le Perso :
+// la sommer ferait un doublon). `entreprise: true` pour inclure quand même ses opérations (ex. liste des opérations).
+export function txs({ period = S.period, activity = S.activity, entreprise } = {}) {
+  if (activity === 'Bourse') activity = 'Tout';      // la bourse n'est pas une activité d'opérations (portefeuille à part)
+  if (entreprise == null) entreprise = activity !== 'Tout';
+  return S.data.tx.filter((t) => inRange(t.date, period) && (activity === 'Tout' ? (entreprise || t.activite !== 'Entreprise') : t.activite === activity));
 }
+export const summable = (t, activity = S.activity) => activity !== 'Tout' || t.activite !== 'Entreprise';
 export function groupOf(t) { const c = S.catMap[`${t.activite}|${t.sens}|${t.categorie}`]; return c ? c.groupe : 'Autres'; }
 export function iconOf(t) { const c = S.catMap[`${t.activite}|${t.sens}|${t.categorie}`]; return c ? c.icone : '•'; }
 
@@ -83,9 +88,6 @@ export function topCategories(list, { by = 'groupe', n = 8 } = {}) {
 export const tenancyFor = (lot, month) => core.tenancyFor(S, lot, month);
 export const activeTenants = (date = S.today) => core.activeTenants(S, date);
 export const rentCell = (lot, month) => core.rentCell(S, lot, month);
-export const microFactor = (year) => core.microFactor(S, year);
-export const freelanceYear = (year) => core.freelanceYear(S, year);
-export const microYear = () => core.microYear(S);
 
 // Tri stable « plus récent d'abord » (date puis ordre de saisie)
 export const byDateDesc = (a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : (b.seq || 1e15) - (a.seq || 1e15));
